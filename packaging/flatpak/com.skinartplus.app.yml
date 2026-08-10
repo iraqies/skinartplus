@@ -41,8 +41,8 @@ modules:
       - find /app/lib/Skinart+ -type f -exec chmod 644 {} \; 2>/dev/null || true
 
       # Copy desktop file + ensure the right icon is set
-      - sed -i 's/^Icon=.*/Icon=com.skinartplus.app/' deb-extract/usr/share/applications/skinartplus.desktop
-      - install -Dm644 deb-extract/usr/share/applications/skinartplus.desktop /app/share/applications/com.skinartplus.app.desktop
+      - sed -i 's/^Icon=.*/Icon=com.skinartplus.app/' deb-extract/usr/share/applications/Skinart+.desktop
+      - install -Dm644 deb-extract/usr/share/applications/Skinart+.desktop /app/share/applications/com.skinartplus.app.desktop
 
       # Copy icons
       - install -Dm644 deb-extract/usr/share/icons/hicolor/128x128/apps/skinartplus.png /app/share/icons/hicolor/128x128/apps/com.skinartplus.app.png
