@@ -73,7 +73,7 @@ jobs:
       - name: Place deb where manifest expects it
         run: |
           mkdir -p src-tauri/target/release/bundle/deb
-          cp artifacts/bundle/deb/*.deb src-tauri/target/release/bundle/deb/
+          cp artifacts/deb/*.deb src-tauri/target/release/bundle/deb/
 
       - name: Install flatpak tooling
         run: |

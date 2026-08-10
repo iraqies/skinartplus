@@ -39,8 +39,11 @@ pub fn run() {
             commands::claim::claim_namemc,
             commands::claim::cancel_claim,
             commands::update::get_app_version,
+            commands::update::get_os_platform,
             commands::update::check_for_update,
             commands::update::open_latest_release,
+            commands::update::download_update,
+            commands::update::run_update_installer,
         ])
         .setup(|app| {
             let version = app.package_info().version.to_string();

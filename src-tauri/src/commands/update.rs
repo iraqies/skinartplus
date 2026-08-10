@@ -23,6 +23,12 @@ pub struct UpdateInfo {
     pub download_url: Option<String>,
 }
 
+#[derive(serde::Serialize)]
+pub struct DownloadedUpdate {
+    pub path: String,
+    pub file_name: String,
+}
+
 fn current_version(app: &tauri::AppHandle) -> String {
     app.package_info()
         .version
@@ -95,6 +101,11 @@ pub fn get_app_version(app: tauri::AppHandle) -> String {
 }
 
 #[tauri::command]
+pub fn get_os_platform() -> String {
+    std::env::consts::OS.to_string()
+}
+
+#[tauri::command]
 pub async fn open_latest_release(app: tauri::AppHandle) -> Result<(), String> {
     let info = check_for_update(app.clone()).await?;
     if info.is_outdated && !info.release_url.is_empty() {
@@ -102,5 +113,73 @@ pub async fn open_latest_release(app: tauri::AppHandle) -> Result<(), String> {
             .open_url(&info.release_url, None::<&str>)
             .map_err(|e| e.to_string())?;
     }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn download_update(app: tauri::AppHandle) -> Result<DownloadedUpdate, String> {
+    let info = check_for_update(app.clone()).await?;
+    let url = info
+        .download_url
+        .ok_or_else(|| "No update installer is available for this release.".to_string())?;
+
+    let file_name = url
+        .rsplit('/')
+        .next()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "Could not determine installer file name.".to_string())?
+        .to_string();
+
+    let dest = std::env::temp_dir().join(&file_name);
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(&url)
+        .header("User-Agent", "SkinartPlus-Updater")
+        .timeout(std::time::Duration::from_secs(600))
+        .send()
+        .await
+        .map_err(|e| format!("Download failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Download failed with status {}.", resp.status()));
+    }
+
+    let bytes = resp.bytes().await.map_err(|e| format!("Download failed: {}", e))?;
+    std::fs::write(&dest, bytes).map_err(|e| format!("Could not save installer: {}", e))?;
+
+    Ok(DownloadedUpdate {
+        path: dest.to_string_lossy().to_string(),
+        file_name,
+    })
+}
+
+#[tauri::command]
+pub fn run_update_installer(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let installer = std::path::PathBuf::from(&path);
+    if !installer.exists() {
+        return Err("Installer file not found.".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new(&installer)
+            .spawn()
+            .map_err(|e| format!("Failed to launch installer: {}", e))?;
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = &installer;
+        app.opener()
+            .open_url(&path, None::<&str>)
+            .map_err(|e| e.to_string())?;
+    }
+
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        app.exit(0);
+    });
+
     Ok(())
 }

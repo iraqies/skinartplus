@@ -1096,6 +1096,9 @@ refreshSavedAccountsList();
 loadTemplates();
 checkForUpdates();
 setVersionInfo();
+window.__TAURI__.event.listen('templates-updated', () => {
+  loadTemplates();
+});
 
 // ── Version Info ─────────────────────────────────────────────────
 
@@ -1131,7 +1134,22 @@ async function checkForUpdates() {
   const dismissBtn = document.getElementById('btn-update-dismiss');
   if (downloadBtn) {
     downloadBtn.addEventListener('click', async () => {
-      await window.__TAURI__.core.invoke('open_latest_release');
+      try {
+        const platform = await window.__TAURI__.core.invoke('get_os_platform');
+        if (platform === 'windows') {
+          downloadBtn.textContent = 'Downloading...';
+          downloadBtn.disabled = true;
+          const dl = await window.__TAURI__.core.invoke('download_update');
+          downloadBtn.textContent = 'Installing...';
+          await window.__TAURI__.core.invoke('run_update_installer', { path: dl.path });
+        } else {
+          await window.__TAURI__.core.invoke('open_latest_release');
+        }
+      } catch (e) {
+        console.warn('Update install failed:', e);
+        downloadBtn.textContent = 'Download';
+        downloadBtn.disabled = false;
+      }
     });
   }
   if (dismissBtn) {

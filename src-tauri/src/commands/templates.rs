@@ -3,9 +3,9 @@ use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
-const GITHUB_RAW: &str = "https://raw.githubusercontent.com/iraqies/MySkinArt/main/templates";
+const GITHUB_RAW: &str = "https://raw.githubusercontent.com/iraqies/skinartplus/main/templates";
 
 fn app_templates_dir(app: &AppHandle) -> PathBuf {
     app.path().app_data_dir().unwrap_or_default().join("templates")
@@ -134,6 +134,7 @@ pub async fn sync_remote(app: AppHandle) {
     let _ = fs::create_dir_all(&app_dir);
     let _ = fs::write(templates_json_path(&app_dir), &text);
 
+    let mut downloaded_any = false;
     if let Some(arr) = json.get("templates").and_then(|t| t.as_array()) {
         for t in arr {
             let Some(fname) = t["filename"].as_str() else {
@@ -144,10 +145,19 @@ pub async fn sync_remote(app: AppHandle) {
                 let url = format!("{}/{}", GITHUB_RAW, fname);
                 if let Ok(resp) = client.get(&url).send().await {
                     if let Ok(bytes) = resp.bytes().await {
-                        let _ = fs::write(&dst, bytes);
+                        if let Some(parent) = dst.parent() {
+                            let _ = fs::create_dir_all(parent);
+                        }
+                        if fs::write(&dst, bytes).is_ok() {
+                            downloaded_any = true;
+                        }
                     }
                 }
             }
         }
+    }
+
+    if downloaded_any {
+        let _ = app.emit("templates-updated", ());
     }
 }
