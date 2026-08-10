@@ -1,6 +1,8 @@
 mod commands;
 mod mc;
 
+use tauri::Manager;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -36,8 +38,15 @@ pub fn run() {
             commands::accounts::delete_account,
             commands::claim::claim_namemc,
             commands::claim::cancel_claim,
+            commands::update::get_app_version,
+            commands::update::check_for_update,
+            commands::update::open_latest_release,
         ])
         .setup(|app| {
+            let version = app.package_info().version.to_string();
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_title(&format!("Skinart+ v{}", version));
+            }
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let _ = commands::templates::sync_bundled(&handle);

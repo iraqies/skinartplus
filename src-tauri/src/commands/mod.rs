@@ -6,3 +6,4 @@ pub mod files;
 pub mod image;
 pub mod namemc;
 pub mod templates;
+pub mod update;

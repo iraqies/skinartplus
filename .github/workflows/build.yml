@@ -61,25 +61,24 @@ jobs:
   flatpak:
     runs-on: ubuntu-22.04
     needs: tauri
-    container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-47
-      options: --privileged
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - name: Download deb from tauri build
+        uses: actions/download-artifact@v4
+        with:
+          name: ubuntu-22.04-bundles
+          path: artifacts/
 
-      - name: Install Linux dependencies
+      - name: Place deb where manifest expects it
         run: |
-          apt-get update
-          apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          mkdir -p src-tauri/target/release/bundle/deb
+          cp artifacts/bundle/deb/*.deb src-tauri/target/release/bundle/deb/
 
-      - name: Install frontend dependencies
-        run: npm install
-
-      - name: Build deb
-        run: npm run tauri build -- --bundles deb
+      - name: Install flatpak tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
 
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         name: Build Flatpak

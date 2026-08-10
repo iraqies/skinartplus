@@ -1,6 +1,7 @@
 # Rust / Cargo
 /target
 src-tauri/target
+src-tauri/target2
 
 # Node
 node_modules

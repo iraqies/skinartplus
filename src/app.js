@@ -1094,6 +1094,53 @@ dom.btnRestart.addEventListener('click', async () => {
 updateAccountArea();
 refreshSavedAccountsList();
 loadTemplates();
+checkForUpdates();
+setVersionInfo();
+
+// ── Version Info ─────────────────────────────────────────────────
+
+async function setVersionInfo() {
+  try {
+    const version = await window.__TAURI__.core.invoke('get_app_version');
+    const el = document.getElementById('info-version');
+    if (el) el.textContent = 'Version ' + version;
+    document.title = 'Skinart+ v' + version;
+  } catch (e) {
+    console.warn('Could not load version info:', e);
+  }
+}
+
+// ── Update Check ─────────────────────────────────────────────────
+
+async function checkForUpdates() {
+  try {
+    const info = await window.__TAURI__.core.invoke('check_for_update');
+    if (!info || !info.is_outdated) return;
+    const banner = document.getElementById('update-banner');
+    const text = document.getElementById('update-banner-text');
+    if (!banner || !text) return;
+    text.textContent = 'A new version (v' + info.latest_version + ') is available. You are on v' + info.current_version + '.';
+    banner.style.display = 'flex';
+  } catch (e) {
+    console.warn('Update check failed:', e);
+  }
+}
+
+(function() {
+  const downloadBtn = document.getElementById('btn-update-download');
+  const dismissBtn = document.getElementById('btn-update-dismiss');
+  if (downloadBtn) {
+    downloadBtn.addEventListener('click', async () => {
+      await window.__TAURI__.core.invoke('open_latest_release');
+    });
+  }
+  if (dismissBtn) {
+    dismissBtn.addEventListener('click', () => {
+      const banner = document.getElementById('update-banner');
+      if (banner) banner.style.display = 'none';
+    });
+  }
+})();
 
 // ── Design Tab (Pixel Art Canvas) ────────────────────────────────
 
