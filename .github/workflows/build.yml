@@ -61,6 +61,9 @@ jobs:
   flatpak:
     runs-on: ubuntu-22.04
     needs: tauri
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      options: --privileged
     steps:
       - uses: actions/checkout@v4
 
@@ -74,11 +77,6 @@ jobs:
         run: |
           mkdir -p src-tauri/target/release/bundle/deb
           cp artifacts/deb/*.deb src-tauri/target/release/bundle/deb/
-
-      - name: Install flatpak tooling
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder
 
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         name: Build Flatpak
