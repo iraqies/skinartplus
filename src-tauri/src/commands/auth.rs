@@ -3,12 +3,28 @@ use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use serde::Serialize;
 use serde_json::Value;
 
-const MC_CLIENT_ID: &str = "c36a9fb6-4f2a-41ff-90bd-ae7cc92031eb";
+const MC_CLIENT_ID: &str = env!("SKINARTPLUS_CLIENT_ID");
+const MC_CLIENT_SECRET: Option<&str> = option_env!("SKINARTPLUS_CLIENT_SECRET");
+const MS_AUTHORITY: &str = env!("SKINARTPLUS_MS_AUTHORITY");
+
+fn form_body(params: &[(&str, &str)]) -> String {
+    let mut parts: Vec<String> = params
+        .iter()
+        .map(|(k, v)| format!("{}={}", urlencode(k), urlencode(v)))
+        .collect();
+    if let Some(secret) = MC_CLIENT_SECRET {
+        parts.push(format!("client_secret={}", urlencode(secret)));
+    }
+    parts.join("&")
+}
 
 async fn ms_token(body: String) -> Result<Value, String> {
     let client = http_client();
     let resp = client
-        .post("https://login.microsoftonline.com/consumers/oauth2/v2.0/token")
+        .post(format!(
+            "https://login.microsoftonline.com/{}/oauth2/v2.0/token",
+            MS_AUTHORITY
+        ))
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(body)
         .send()
@@ -102,14 +118,16 @@ pub struct DeviceCodeResult {
 
 #[tauri::command]
 pub async fn start_auth_device() -> Result<DeviceCodeResult, String> {
-    let body = format!(
-        "client_id={}&scope={}",
-        urlencode(MC_CLIENT_ID),
-        urlencode("XboxLive.signin offline_access")
-    );
+    let body = form_body(&[
+        ("client_id", MC_CLIENT_ID),
+        ("scope", "XboxLive.signin offline_access"),
+    ]);
     let client = http_client();
     let resp = client
-        .post("https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode")
+        .post(format!(
+            "https://login.microsoftonline.com/{}/oauth2/v2.0/devicecode",
+            MS_AUTHORITY
+        ))
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(body)
         .send()
@@ -144,12 +162,11 @@ pub struct PollResult {
 
 #[tauri::command]
 pub async fn poll_auth_token(device_code: String) -> PollResult {
-    let body = format!(
-        "grant_type={}&client_id={}&device_code={}",
-        urlencode("urn:ietf:params:oauth:grant-type:device_code"),
-        urlencode(MC_CLIENT_ID),
-        urlencode(&device_code)
-    );
+    let body = form_body(&[
+        ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+        ("client_id", MC_CLIENT_ID),
+        ("device_code", device_code.as_str()),
+    ]);
     match ms_token(body).await {
         Ok(json) => {
             if let Some(err) = json.get("error").and_then(|v| v.as_str()) {
@@ -211,12 +228,12 @@ pub struct RefreshResult {
 
 #[tauri::command]
 pub async fn refresh_saved_token(refresh_token: String) -> RefreshResult {
-    let body = format!(
-        "client_id={}&scope={}&grant_type=refresh_token&refresh_token={}",
-        urlencode(MC_CLIENT_ID),
-        urlencode("XboxLive.signin offline_access"),
-        urlencode(&refresh_token)
-    );
+    let body = form_body(&[
+        ("client_id", MC_CLIENT_ID),
+        ("scope", "XboxLive.signin offline_access"),
+        ("grant_type", "refresh_token"),
+        ("refresh_token", refresh_token.as_str()),
+    ]);
     match ms_token(body).await {
         Ok(json) => {
             if json.get("error").is_some() {

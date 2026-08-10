@@ -48,6 +48,9 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SKINARTPLUS_CLIENT_ID: ${{ secrets.SKINARTPLUS_CLIENT_ID }}
+          SKINARTPLUS_CLIENT_SECRET: ${{ secrets.SKINARTPLUS_CLIENT_SECRET }}
+          SKINARTPLUS_MS_AUTHORITY: ${{ secrets.SKINARTPLUS_MS_AUTHORITY }}
         with:
           args: ${{ matrix.args }}
 
