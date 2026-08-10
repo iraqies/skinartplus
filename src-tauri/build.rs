@@ -21,4 +21,11 @@ fn main() {
         .unwrap_or_else(|| "consumers".to_string());
     println!("cargo:rustc-env=SKINARTPLUS_MS_AUTHORITY={}", authority);
     println!("cargo:rerun-if-env-changed=SKINARTPLUS_MS_AUTHORITY");
+
+    let redirect_uri = std::env::var("SKINARTPLUS_REDIRECT_URI")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| "http://localhost:5000/goldenCallback".to_string());
+    println!("cargo:rustc-env=SKINARTPLUS_REDIRECT_URI={}", redirect_uri);
+    println!("cargo:rerun-if-env-changed=SKINARTPLUS_REDIRECT_URI");
 }

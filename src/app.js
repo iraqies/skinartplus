@@ -384,23 +384,32 @@ dom.btnAuthStart.addEventListener('click', async () => {
   dom.btnAuthStart.disabled = true;
   dom.btnAuthStart.textContent = 'Starting...';
   try {
-    const dc = await window.__TAURI__.core.invoke('start_auth_device');
+    const start = await window.__TAURI__.core.invoke('start_auth');
     dom.deviceCodeArea.style.display = 'block';
     dom.dcSpinner.style.display = 'block';
     dom.dcUri.parentElement.style.display = '';
-    dom.dcCode.style.display = '';
-    dom.dcUri.textContent = dc.verification_uri;
-    dom.dcUri.href = dc.verification_uri;
-    dom.dcCode.textContent = dc.user_code;
     dom.btnOpenBrowser.style.display = 'inline-block';
-    dom.btnOpenBrowser.onclick = () => {
-      window.__TAURI__.opener.openUrl('https://www.microsoft.com/link?otc=' + dc.user_code);
-    };
     dom.dcStatus.textContent = 'Waiting for you to sign in...';
     dom.dcStatus.style.color = '';
     dom.btnAuthStart.textContent = 'Sign in with Microsoft';
-    dom.btnAuthStart.disabled = true;
-    pollDeviceCode(dc.device_code, dc.interval * 1000);
+    if (start.flow === 'code') {
+      dom.dcCode.style.display = 'none';
+      dom.dcUri.textContent = 'Open Microsoft sign-in';
+      dom.dcUri.href = start.verification_uri;
+      dom.btnOpenBrowser.onclick = () => {
+        window.__TAURI__.opener.openUrl(start.verification_uri);
+      };
+      pollAuthCode();
+    } else {
+      dom.dcCode.style.display = '';
+      dom.dcUri.textContent = start.verification_uri;
+      dom.dcUri.href = start.verification_uri;
+      dom.dcCode.textContent = start.user_code;
+      dom.btnOpenBrowser.onclick = () => {
+        window.__TAURI__.opener.openUrl('https://www.microsoft.com/link?otc=' + start.user_code);
+      };
+      pollDeviceCode(start.device_code, start.interval * 1000);
+    }
   } catch (e) {
     dom.dcStatus.textContent = 'Error: ' + e.message;
     dom.dcStatus.style.color = '#FF5555';
@@ -410,19 +419,23 @@ dom.btnAuthStart.addEventListener('click', async () => {
   }
 });
 
+async function completeAuth(result) {
+  state.bearerToken = result.bearerToken;
+  state.refreshToken = result.refreshToken || null;
+  dom.dcSpinner.style.display = 'none';
+  dom.btnOpenBrowser.style.display = 'none';
+  dom.dcStatus.textContent = 'Signed in!';
+  dom.dcStatus.style.color = '#55FF55';
+  await fetchProfile();
+}
+
 function pollDeviceCode(deviceCode, interval) {
   if (state.pollTimer) clearTimeout(state.pollTimer);
   async function tick() {
     try {
       const result = await window.__TAURI__.core.invoke('poll_auth_token', { deviceCode });
       if (result.status === 'success') {
-        state.bearerToken = result.bearerToken;
-        state.refreshToken = result.refreshToken || null;
-        dom.dcSpinner.style.display = 'none';
-        dom.btnOpenBrowser.style.display = 'none';
-        dom.dcStatus.textContent = 'Signed in!';
-        dom.dcStatus.style.color = '#55FF55';
-        await fetchProfile();
+        await completeAuth(result);
         dom.signinModal.style.display = 'none';
         return;
       }
@@ -443,6 +456,34 @@ function pollDeviceCode(deviceCode, interval) {
     }
   }
   state.pollTimer = setTimeout(tick, interval);
+}
+
+function pollAuthCode() {
+  if (state.pollTimer) clearTimeout(state.pollTimer);
+  async function tick() {
+    try {
+      const result = await window.__TAURI__.core.invoke('poll_auth_code');
+      if (result.status === 'success') {
+        await completeAuth(result);
+        dom.signinModal.style.display = 'none';
+        return;
+      }
+      if (result.status === 'error') {
+        dom.dcSpinner.style.display = 'none';
+        dom.dcStatus.textContent = 'Error: ' + result.message;
+        dom.dcStatus.style.color = '#FF5555';
+        dom.btnAuthStart.disabled = false;
+        return;
+      }
+      state.pollTimer = setTimeout(tick, 2000);
+    } catch (e) {
+      dom.dcSpinner.style.display = 'none';
+      dom.dcStatus.textContent = 'Error: ' + e.message;
+      dom.dcStatus.style.color = '#FF5555';
+      dom.btnAuthStart.disabled = false;
+    }
+  }
+  state.pollTimer = setTimeout(tick, 2000);
 }
 
 async function fetchProfile() {

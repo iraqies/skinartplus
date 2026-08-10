@@ -2,10 +2,113 @@ use crate::commands::files::{http_client, urlencode};
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use serde::Serialize;
 use serde_json::Value;
+use std::collections::HashMap;
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::sync::{Mutex, OnceLock};
 
 const MC_CLIENT_ID: &str = env!("SKINARTPLUS_CLIENT_ID");
 const MC_CLIENT_SECRET: Option<&str> = option_env!("SKINARTPLUS_CLIENT_SECRET");
 const MS_AUTHORITY: &str = env!("SKINARTPLUS_MS_AUTHORITY");
+const REDIRECT_URI: &str = env!("SKINARTPLUS_REDIRECT_URI");
+
+#[derive(Default)]
+struct AuthCodeState {
+    code: Option<String>,
+    error: Option<String>,
+}
+
+fn auth_code_state() -> &'static Mutex<AuthCodeState> {
+    static STATE: OnceLock<Mutex<AuthCodeState>> = OnceLock::new();
+    STATE.get_or_init(|| Mutex::new(AuthCodeState::default()))
+}
+
+fn redirect_host_port() -> (String, u16) {
+    let rest = REDIRECT_URI.strip_prefix("http://").unwrap_or(REDIRECT_URI);
+    let (host_port, _path) = rest.split_once('/').unwrap_or((rest, ""));
+    match host_port.rsplit_once(':') {
+        Some((host, port)) => (host.to_string(), port.parse().unwrap_or(80)),
+        None => (host_port.to_string(), 80),
+    }
+}
+
+fn http_respond(stream: &mut TcpStream, status: u16, body: &str) -> std::io::Result<()> {
+    let reason = if status == 200 { "OK" } else { "Bad Request" };
+    let resp = format!(
+        "HTTP/1.1 {} {}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        status,
+        reason,
+        body.len(),
+        body
+    );
+    stream.write_all(resp.as_bytes())
+}
+
+fn spawn_code_callback_server() -> Result<(), String> {
+    let (host, port) = redirect_host_port();
+    let listener = TcpListener::bind((host.as_str(), port))
+        .map_err(|e| format!("Cannot start local callback server on {}:{}: {}", host, port, e))?;
+    {
+        let mut state = auth_code_state().lock().unwrap();
+        *state = AuthCodeState::default();
+    }
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let mut stream = match stream {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            let mut buf = [0u8; 4096];
+            let n = stream.read(&mut buf).unwrap_or(0);
+            let request = String::from_utf8_lossy(&buf[..n]).to_string();
+            let first_line = request.lines().next().unwrap_or("").to_string();
+            let path = first_line
+                .split_whitespace()
+                .nth(1)
+                .unwrap_or("/")
+                .to_string();
+            let mut state = auth_code_state().lock().unwrap();
+            if let Some((_, query)) = path.split_once('?') {
+                let params: HashMap<String, String> = query
+                    .split('&')
+                    .filter_map(|kv| {
+                        let mut it = kv.splitn(2, '=');
+                        Some((
+                            it.next()?.to_string(),
+                            it.next().unwrap_or("").to_string(),
+                        ))
+                    })
+                    .collect();
+                if let Some(code) = params.get("code") {
+                    state.code = Some(code.clone());
+                    let _ = http_respond(
+                        &mut stream,
+                        200,
+                        "<html><body><h2>Sign-in successful</h2><p>You can close this window.</p></body></html>",
+                    );
+                } else if let Some(err) = params
+                    .get("error_description")
+                    .or_else(|| params.get("error"))
+                {
+                    state.error = Some(err.clone());
+                    let _ = http_respond(
+                        &mut stream,
+                        200,
+                        "<html><body><h2>Sign-in failed</h2><p>You can close this window.</p></body></html>",
+                    );
+                } else {
+                    state.error = Some("No authorization code received".into());
+                    let _ = http_respond(&mut stream, 400, "Missing code");
+                }
+            } else {
+                state.error = Some("Invalid callback request".into());
+                let _ = http_respond(&mut stream, 400, "Bad request");
+            }
+            break;
+        }
+    });
+    Ok(())
+}
 
 fn form_body(params: &[(&str, &str)]) -> String {
     let mut parts: Vec<String> = params
@@ -107,17 +210,35 @@ async fn exchange_for_minecraft(ms_token_value: &str) -> Result<String, String> 
 }
 
 #[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
-pub struct DeviceCodeResult {
-    pub user_code: String,
+#[serde(rename_all = "camelCase")]
+pub struct AuthStartResult {
+    pub flow: String,
     pub verification_uri: String,
+    pub user_code: String,
     pub device_code: String,
     pub interval: i64,
-    pub expires_in: i64,
 }
 
 #[tauri::command]
-pub async fn start_auth_device() -> Result<DeviceCodeResult, String> {
+pub async fn start_auth() -> Result<AuthStartResult, String> {
+    if MC_CLIENT_SECRET.is_some() {
+        spawn_code_callback_server()?;
+        let url = format!(
+            "https://login.microsoftonline.com/{}/oauth2/v2.0/authorize?client_id={}&response_type=code&redirect_uri={}&scope={}&prompt=select_account",
+            MS_AUTHORITY,
+            urlencode(MC_CLIENT_ID),
+            urlencode(REDIRECT_URI),
+            urlencode("XboxLive.signin offline_access")
+        );
+        return Ok(AuthStartResult {
+            flow: "code".into(),
+            verification_uri: url,
+            user_code: String::new(),
+            device_code: String::new(),
+            interval: 2,
+        });
+    }
+
     let body = form_body(&[
         ("client_id", MC_CLIENT_ID),
         ("scope", "XboxLive.signin offline_access"),
@@ -142,12 +263,12 @@ pub async fn start_auth_device() -> Result<DeviceCodeResult, String> {
             .unwrap_or("device code error")
             .to_string());
     }
-    Ok(DeviceCodeResult {
-        user_code: json["user_code"].as_str().unwrap_or("").to_string(),
+    Ok(AuthStartResult {
+        flow: "device".into(),
         verification_uri: json["verification_uri"].as_str().unwrap_or("").to_string(),
+        user_code: json["user_code"].as_str().unwrap_or("").to_string(),
         device_code: json["device_code"].as_str().unwrap_or("").to_string(),
         interval: json["interval"].as_i64().unwrap_or(5),
-        expires_in: json["expires_in"].as_i64().unwrap_or(900),
     })
 }
 
@@ -189,6 +310,65 @@ pub async fn poll_auth_token(device_code: String) -> PollResult {
                         ),
                         ..Default::default()
                     },
+                };
+            }
+            let access = json["access_token"].as_str().unwrap_or("");
+            match exchange_for_minecraft(access).await {
+                Ok(bearer) => PollResult {
+                    status: "success".into(),
+                    bearer_token: Some(bearer),
+                    refresh_token: json
+                        .get("refresh_token")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    ..Default::default()
+                },
+                Err(e) => PollResult {
+                    status: "error".into(),
+                    message: Some(e),
+                    ..Default::default()
+                },
+            }
+        }
+        Err(e) => PollResult {
+            status: "error".into(),
+            message: Some(e),
+            ..Default::default()
+        },
+    }
+}
+
+#[tauri::command]
+pub async fn poll_auth_code() -> PollResult {
+    let (code, error) = {
+        let state = auth_code_state().lock().unwrap();
+        (state.code.clone(), state.error.clone())
+    };
+    let Some(code) = code else {
+        return PollResult {
+            status: if error.is_some() { "error" } else { "pending" }.into(),
+            message: error,
+            ..Default::default()
+        };
+    };
+    let body = form_body(&[
+        ("grant_type", "authorization_code"),
+        ("client_id", MC_CLIENT_ID),
+        ("code", code.as_str()),
+        ("redirect_uri", REDIRECT_URI),
+    ]);
+    match ms_token(body).await {
+        Ok(json) => {
+            if let Some(err) = json.get("error").and_then(|v| v.as_str()) {
+                return PollResult {
+                    status: "error".into(),
+                    message: Some(
+                        json.get("error_description")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(err)
+                            .to_string(),
+                    ),
+                    ..Default::default()
                 };
             }
             let access = json["access_token"].as_str().unwrap_or("");
