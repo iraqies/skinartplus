@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-8 -8 16 16" shape-rendering="crispEdges">
+  <rect style="fill:black" x="-8" y="-8" width="16" height="16"/>
+  <path style="fill:white" d="M-5-5L+3-5L+3-3L+5-3L+5+5L+3+5L+3-3L-3-3L-3+5L-5+5"/>
+</svg>

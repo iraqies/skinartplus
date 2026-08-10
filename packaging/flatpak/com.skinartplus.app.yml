@@ -1,0 +1,50 @@
+id: com.skinartplus.app
+runtime: org.gnome.Platform
+runtime-version: '47'
+sdk: org.gnome.Sdk
+
+command: skinartplus
+finish-args:
+  - --socket=wayland # Permission needed to show the window
+  - --socket=fallback-x11 # Permission needed to show the window on legacy windowing systems
+  - --device=dri # OpenGL, not necessary for all projects
+  - --share=ipc
+  - --share=network
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --filesystem=xdg-run/tray-icon:create
+
+modules:
+  - name: binary
+    buildsystem: simple
+
+    sources:
+      - type: file
+        path: ../../src-tauri/target/release/bundle/deb/skinartplus_1.0.0_amd64.deb
+        only-arches: [x86_64]
+      - type: file
+        path: flatpak.metainfo.xml
+
+    build-commands:
+      - set -e
+
+      # Extract the deb package
+      - mkdir deb-extract
+      - ar -x *.deb --output deb-extract
+      - tar -C deb-extract -xf deb-extract/data.tar.gz
+
+      # Copy binary
+      - 'install -Dm755 deb-extract/usr/bin/skinartplus /app/bin/skinartplus'
+
+      # If you bundle files with additional resources, you should copy them:
+      - mkdir -p /app/lib/Skinart+
+      - cp -r deb-extract/usr/lib/Skinart+/. /app/lib/Skinart+ 2>/dev/null || true
+      - find /app/lib/Skinart+ -type f -exec chmod 644 {} \; 2>/dev/null || true
+
+      # Copy desktop file + ensure the right icon is set
+      - sed -i 's/^Icon=.*/Icon=com.skinartplus.app/' deb-extract/usr/share/applications/skinartplus.desktop
+      - install -Dm644 deb-extract/usr/share/applications/skinartplus.desktop /app/share/applications/com.skinartplus.app.desktop
+
+      # Copy icons
+      - install -Dm644 deb-extract/usr/share/icons/hicolor/128x128/apps/skinartplus.png /app/share/icons/hicolor/128x128/apps/com.skinartplus.app.png
+      - install -Dm644 deb-extract/usr/share/icons/hicolor/32x32/apps/skinartplus.png /app/share/icons/hicolor/32x32/apps/com.skinartplus.app.png
+      - install -Dm644 flatpak.metainfo.xml /app/share/metainfo/com.skinartplus.app.metainfo.xml

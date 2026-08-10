@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.skinartplus.app</id>
+  <name>Skinart+</name>
+  <summary>NameMC skin art tool</summary>
+  <developer_name>Skinart+</developer_name>
+  <description>
+    <p>Skinart+ lets you turn pixel art images into Minecraft skins you can upload to NameMC.</p>
+  </description>
+  <launchable type="desktop-id">com.skinartplus.app.desktop</launchable>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <url type="homepage">https://github.com/</url>
+  <releases>
+    <release version="1.0.0" date="2026-08-09"/>
+  </releases>
+</component>

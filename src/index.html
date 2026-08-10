@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Skinart+</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=8">
+<script>
+  window.addEventListener('keydown', function (e) {
+    var k = e.key ? e.key.toLowerCase() : '';
+    var mod = e.ctrlKey || e.metaKey;
+    if ((mod && (k === 'r' || k === 'f5')) || k === 'f5') {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  });
+</script>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-left">
+    <h1 class="logo">Skinart+</h1>
+  </div>
+  <div class="topbar-right">
+    <button id="btn-settings" class="btn-settings" title="Settings">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+    <button id="btn-info" class="btn-settings" title="About">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+    </button>
+    <div id="account-area" class="account-area">
+      <button id="btn-signin" class="btn-signin">Sign in</button>
+    </div>
+  </div>
+</div>
+
+<div id="signin-modal" class="modal" style="display:none">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Sign in with Microsoft</h2>
+      <button id="btn-close-modal" class="btn-close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <details class="token-help">
+        <summary>How does this work?</summary>
+        <ol>
+          <li>Click <strong>Start Sign In</strong> below</li>
+          <li>A code and URL will appear</li>
+          <li>Open the URL in any browser, enter the code, and sign in</li>
+          <li>The app detects the login automatically</li>
+        </ol>
+      </details>
+      <div class="auth-section">
+        <button id="btn-auth-start">Start Sign In</button>
+        <div id="device-code-area" style="display:none">
+          <p class="dc-instruction">Go to <a id="dc-uri" href="#" target="_blank"></a> and enter code:</p>
+          <div class="dc-code" id="dc-code"></div>
+          <button id="btn-open-browser">Click to open in browser</button>
+          <div class="dc-spinner" id="dc-spinner"><div class="spinner"></div></div>
+          <p id="dc-status">Waiting for you to sign in...</p>
+        </div>
+      </div>
+      <div class="saved-accounts-section" id="saved-accounts-section" style="display:none">
+        <h3>Saved Accounts</h3>
+        <div id="saved-accounts-list" class="saved-accounts-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="account-dropdown" class="dropdown" style="display:none">
+  <div class="dropdown-header">
+    <img id="dd-head" class="dd-head" src="" alt="">
+    <div class="dd-info">
+      <span id="dd-name" class="dd-name"></span>
+      <span id="dd-uuid" class="dd-uuid"></span>
+    </div>
+  </div>
+  <div class="dropdown-divider"></div>
+  <button id="dd-namemc" class="dropdown-item">Open NameMC Profile</button>
+  <div class="dropdown-divider"></div>
+  <button id="dd-switch" class="dropdown-item">Switch Account</button>
+  <button id="dd-logout" class="dropdown-item danger">Sign Out</button>
+</div>
+
+<div class="app" id="app">
+  <div class="tab-buttons">
+    <button class="tab-btn active" data-tab="create">Create</button>
+    <button class="tab-btn" data-tab="design">Design</button>
+    <button class="tab-btn" data-tab="templates">Templates</button>
+    <button class="tab-btn" data-tab="utility">Utility</button>
+  </div>
+
+  <div id="tab-create" class="tab-content active">
+    <div class="upload-zone" id="input-zone">
+      <div class="upload-icon">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+      </div>
+      <span>72x24 Skin Art</span>
+      <small id="input-name">No image selected</small>
+      <input type="button" id="select-input" value="Select Image">
+    </div>
+    <div class="upload-zone secondary" id="base-zone">
+      <span>64x64 Base Skin (optional)</span>
+      <small id="base-name">None</small>
+      <input type="button" id="select-base" value="Select Base">
+    </div>
+    <div class="upload-zone secondary" id="original-zone">
+      <span>Your Original Skin (slot #27)</span>
+      <small id="original-name">Defaults to last tile from art</small>
+      <div class="original-options">
+        <input type="button" id="select-original" value="Select File">
+      </div>
+    </div>
+    <div class="preview-wrapper" id="preview-wrapper" style="display:none"></div>
+    <div class="actions">
+      <button id="btn-generate" disabled>Generate Skins</button>
+    </div>
+  </div>
+
+  <div id="tab-templates" class="tab-content">
+    <div class="templates-search-bar">
+      <div class="search-row">
+        <div class="search-input-wrap">
+          <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="templates-search" class="templates-search" placeholder="Search templates..." autocomplete="off">
+        </div>
+        <select id="templates-tag-select" class="templates-tag-select">
+          <option value="">All Tags</option>
+        </select>
+      </div>
+    </div>
+    <div class="templates-section">
+      <div class="templates-grid" id="templates-grid">
+        <p class="templates-empty">No templates available.</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-design" class="tab-content">
+    <div class="design-layout">
+      <div class="design-canvas-area">
+        <div class="design-canvas-container">
+          <canvas id="design-canvas" width="72" height="24"></canvas>
+          <canvas id="design-grid-canvas" width="72" height="24"></canvas>
+          <canvas id="design-text-preview" width="72" height="24"></canvas>
+          <div class="design-canvas-placeholder" id="design-placeholder">start drawing!</div>
+        </div>
+      </div>
+      <div class="design-panel">
+        <div class="design-palette" id="design-palette"></div>
+        <div class="design-color-row">
+          <input class="design-color-input" id="design-color-input" type="text" value="#000000" maxlength="7">
+          <button class="design-tool-btn" id="design-color-wheel" title="Color Picker">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M2 12h2"/><path d="M20 12h2"/></svg>
+          </button>
+          <button class="design-tool-btn" id="design-erase-btn" title="Erase Mode">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 20H7L3 16l9-9 8 8-4 4z"/><path d="m6.5 13.5 5 5"/></svg>
+          </button>
+        </div>
+        <div class="design-tool-row">
+          <button class="design-tool-btn" id="design-undo" title="Undo (Ctrl+Z)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
+          </button>
+          <button class="design-tool-btn" id="design-redo" title="Redo (Ctrl+Y)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg>
+          </button>
+          <button class="design-tool-btn" id="design-fill-btn" title="Fill Bucket">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 11V6a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v5"/><path d="M5 11v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-9"/><path d="m12 15 4-4-4-4"/></svg>
+          </button>
+          <button class="design-tool-btn" id="design-grid-toggle" title="Toggle Grid">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+          </button>
+          <button class="design-tool-btn design-tool-danger" id="design-clear-btn" title="Clear Canvas">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </div>
+        <div class="design-text-section">
+          <div class="design-text-header">
+            <span class="design-text-label">TEXT</span>
+            <button class="design-tool-btn" id="design-text-btn" title="Add Text">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+            </button>
+          </div>
+          <div class="design-text-controls" id="design-text-controls">
+            <div class="design-text-row">
+              <label>Text:</label>
+              <input type="text" id="design-text-input" class="design-text-field" placeholder="Enter text..." maxlength="50">
+            </div>
+            <div class="design-text-row">
+              <label>Font:</label>
+              <select id="design-font-select" class="design-text-select">
+                <option value="Minecraft">Minecraft</option>
+                <option value="'Press Start 2P'">Press Start 2P</option>
+                <option value="monospace">Monospace</option>
+                <option value="Arial">Arial</option>
+                <option value="Courier New">Courier New</option>
+              </select>
+            </div>
+            <div class="design-text-row">
+              <label>Size:</label>
+              <select id="design-font-size" class="design-text-select">
+                <option value="6">6px</option>
+                <option value="8" selected>8px</option>
+                <option value="10">10px</option>
+                <option value="12">12px</option>
+              </select>
+            </div>
+            <div class="design-text-row">
+              <label>Color:</label>
+              <div class="design-text-color" id="design-text-color"></div>
+            </div>
+            <div class="design-text-info" id="design-text-info">Click canvas to place text</div>
+          </div>
+        </div>
+        <div class="design-actions">
+          <button class="design-action-btn design-import" id="design-import">IMPORT</button>
+          <input type="file" id="design-import-input" accept="image/*" style="display:none" />
+          <button class="design-action-btn design-download" id="design-download">DOWNLOAD</button>
+          <button class="design-action-btn design-use" id="design-use">USE IN CREATE</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-utility" class="tab-content">
+    <div class="utility-grid">
+
+      <div class="utility-card">
+        <div class="utility-card-header">
+          <div class="utility-card-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          </div>
+          <div>
+            <h3 class="utility-card-title">NameMC Linker</h3>
+            <p class="utility-card-desc">Claim your skinart on a Minecraft server.</p>
+          </div>
+        </div>
+        <div class="utility-card-body">
+          <div class="utility-card-desc">Claim your NameMC skinart on a server.</div>
+          <div class="utility-server-row">
+            <button id="utility-claim-go" class="utility-btn accent" disabled>Claim</button>
+          </div>
+          <div id="utility-claim-status" class="utility-claim-status" style="display:none">
+            <div class="utility-spinner"></div>
+            <span id="utility-claim-text">Connecting...</span>
+          </div>
+          <div id="utility-claim-result" class="utility-claim-result" style="display:none"></div>
+        </div>
+      </div>
+
+      <div class="utility-card">
+        <div class="utility-card-header">
+          <div class="utility-card-icon accent">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+          </div>
+          <div>
+            <h3 class="utility-card-title">Skinart Stealer</h3>
+            <p class="utility-card-desc">Extract all visible skins from a NameMC profile into a 9x3 skinart grid.</p>
+          </div>
+        </div>
+        <div class="utility-card-body">
+          <div class="utility-input-row">
+            <input type="text" id="utility-steal-ign" class="utility-input" placeholder="Enter Minecraft username..." maxlength="16">
+            <button id="utility-steal-start" class="utility-btn accent">Steal Skinart</button>
+          </div>
+          <div id="utility-steal-status" class="utility-steal-status" style="display:none">
+            <div class="utility-spinner"></div>
+            <span id="utility-steal-text">Loading...</span>
+          </div>
+          <div id="utility-steal-result" class="utility-steal-result" style="display:none">
+            <canvas id="utility-steal-canvas" width="288" height="96"></canvas>
+            <div class="utility-steal-actions">
+              <button id="utility-steal-download" class="utility-btn primary">Download PNG</button>
+              <button id="utility-steal-use" class="utility-btn accent">Use in Create</button>
+            </div>
+          </div>
+          <div id="utility-steal-log" class="utility-steal-log" style="display:none"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="step-upload" class="step">
+    <div class="upload-actions">
+      <button id="btn-start-upload">Start Upload</button>
+      <button id="btn-export" disabled>Export Skins Only</button>
+    </div>
+    <div class="upload-grid" id="upload-grid"></div>
+    <div class="confirm-area" id="confirm-area" style="display:none">
+      <img id="confirm-head" class="confirm-head" src="" alt="">
+      <p class="confirm-title" id="confirm-title"></p>
+      <div id="poll-status" class="poll-status">
+        <div class="poll-spinner"></div>
+        <span id="poll-text"></span>
+      </div>
+      <p class="hint" id="confirm-hint">Waiting for skin to appear on session server.</p>
+      <div class="confirm-btns">
+        <button id="btn-skip-wait" class="btn-skip">Skip Wait</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="step-done" class="step">
+    <div class="done-icon">
+      <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="16 8 10.5 14 8 11.5"/></svg>
+    </div>
+    <h2>All done!</h2>
+    <p>All skins have been uploaded and confirmed.</p>
+    <button id="btn-restart">Make another</button>
+  </div>
+</div>
+
+<div id="model-modal" class="modal" style="display:none">
+  <div class="modal-content" style="width:400px">
+    <div class="modal-header">
+      <h2>Skin Model</h2>
+    </div>
+    <div class="modal-body" style="text-align:center">
+      <p style="margin:0 0 20px;color:var(--text-muted)">Do you want your original skin (final slot) to use the <b>Slim</b> (Alex) or <b>Wide</b> (Steve) arm model?</p>
+      <div style="display:flex;gap:12px;justify-content:center">
+        <button id="btn-model-slim" class="btn-primary" style="flex:1">Slim (Alex)</button>
+        <button id="btn-model-wide" class="btn-primary" style="flex:1">Wide (Steve)</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="settings-modal" class="modal" style="display:none">
+  <div class="modal-content" style="width:480px">
+    <div class="modal-header">
+      <h2>Settings</h2>
+      <button id="btn-close-settings" class="btn-close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="settings-section">
+        <h3 class="settings-section-title">Appearance</h3>
+        <div class="settings-group">
+          <label class="settings-label">Theme</label>
+          <div class="theme-picker" id="settings-theme"></div>
+        </div>
+        <div class="settings-group">
+          <label class="settings-label">GUI Scale</label>
+          <div class="settings-row">
+            <input type="range" id="settings-gui-scale" class="settings-slider" min="60" max="200" value="100" step="5">
+            <span class="settings-value" id="settings-gui-scale-val">100%</span>
+          </div>
+        </div>
+      </div>
+      <div class="settings-section">
+        <h3 class="settings-section-title">Functionality</h3>
+        <div class="settings-group">
+          <label class="settings-label">Upload Delay <span id="settings-upload-delay-rec"></span></label>
+          <div class="settings-row">
+            <input type="range" id="settings-upload-delay" class="settings-slider" min="0" max="30" value="4" step="1">
+            <span class="settings-value" id="settings-upload-delay-val">4s</span>
+          </div>
+          <small class="settings-hint">Seconds to wait between each skin upload</small>
+        </div>
+        <div class="settings-group">
+          <label class="settings-label">Auto-verify on NameMC</label>
+          <div class="settings-row">
+            <label class="settings-toggle">
+              <input type="checkbox" id="settings-auto-verify" checked>
+              <span class="settings-toggle-slider"></span>
+            </label>
+            <span class="settings-toggle-label">Automatically check NameMC after each upload</span>
+          </div>
+        </div>
+        <div class="settings-group">
+          <label class="settings-label">Print Numbers on Skins</label>
+          <div class="settings-row">
+            <label class="settings-toggle">
+              <input type="checkbox" id="settings-skin-numbers" checked>
+              <span class="settings-toggle-slider"></span>
+            </label>
+            <span class="settings-toggle-label">Print the tile number on the generated skin</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="info-modal" class="modal" style="display:none">
+  <div class="modal-content" style="width:420px">
+    <div class="modal-header">
+      <h2>About</h2>
+      <button id="btn-close-info" class="btn-close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="info-text">This project is made and maintained by <strong>iraqies</strong>.</p>
+      <p class="info-desc">Turn any image into Minecraft skins, tile by tile.</p>
+      <div class="info-links">
+        <button type="button" class="info-link" data-url="https://discord.gg/MjrdzgwNN4">
+          <span class="info-icon">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.369a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.099.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
+          </span>
+          <span class="info-link-label">Discord Server</span>
+          <span class="info-link-arrow">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          </span>
+        </button>
+        <button type="button" class="info-link" data-url="https://stalk.gg/x">
+          <span class="info-icon">
+            <img class="info-logo info-stalk-logo" src="lib/stalk-gg.png" alt="stalk.gg">
+          </span>
+          <span class="info-link-label">stalk.gg Profile</span>
+          <span class="info-link-arrow">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          </span>
+        </button>
+        <button type="button" class="info-link" data-url="https://namemc.com/profile/Iraqies.1">
+          <span class="info-icon">
+            <img class="info-logo info-namemc-logo" src="lib/namemc.svg" alt="NameMC">
+          </span>
+          <span class="info-link-label">NameMC Profile</span>
+          <span class="info-link-arrow">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          </span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+<script src="app.js?v=6"></script>
+</body>
+</html>
