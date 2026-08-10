@@ -107,6 +107,12 @@ jobs:
           path: artifacts/
           merge-multiple: true
 
+      - name: Delete existing release for tag (start fresh)
+        run: |
+          gh release delete "${{ github.ref_name }}" --yes --cleanup-tag=false || echo "no existing release"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
