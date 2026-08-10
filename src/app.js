@@ -397,7 +397,7 @@ dom.btnAuthStart.addEventListener('click', async () => {
       dom.dcUri.textContent = 'Open Microsoft sign-in';
       dom.dcUri.href = start.verification_uri;
       dom.btnOpenBrowser.onclick = () => {
-        window.__TAURI__.opener.openUrl(start.verification_uri);
+        window.__TAURI__.core.invoke('open_url', { url: start.verification_uri });
       };
       pollAuthCode();
     } else {
@@ -406,7 +406,7 @@ dom.btnAuthStart.addEventListener('click', async () => {
       dom.dcUri.href = start.verification_uri;
       dom.dcCode.textContent = start.user_code;
       dom.btnOpenBrowser.onclick = () => {
-        window.__TAURI__.opener.openUrl('https://www.microsoft.com/link?otc=' + start.user_code);
+        window.__TAURI__.core.invoke('open_url', { url: 'https://www.microsoft.com/link?otc=' + start.user_code });
       };
       pollDeviceCode(start.device_code, start.interval * 1000);
     }
