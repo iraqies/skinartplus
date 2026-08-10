@@ -109,9 +109,18 @@ jobs:
 
       - name: Delete existing release for tag (start fresh)
         run: |
-          gh release delete "${{ github.ref_name }}" --yes --cleanup-tag=false || echo "no existing release"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          set -euo pipefail
+          RELEASE_ID=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ github.ref_name }}" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" || true)
+          if [ -n "$RELEASE_ID" ]; then
+            echo "Deleting release $RELEASE_ID"
+            curl -s -X DELETE -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID"
+            echo "Deleted release $RELEASE_ID"
+          else
+            echo "No existing release"
+          fi
 
       - name: Create release
         uses: softprops/action-gh-release@v2
