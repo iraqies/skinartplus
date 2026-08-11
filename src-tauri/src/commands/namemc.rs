@@ -28,33 +28,32 @@ fn is_challenge(html: &str) -> bool {
 
 /// Fetch the NameMC profile page for an IGN.
 ///
-/// NameMC is behind Cloudflare and blocks programmatic HTTP clients based on
-/// their TLS fingerprint (reqwest gets a 403 "Just a moment..." challenge even
-/// with browser headers). The Windows system curl.exe (built on SChannel)
-/// passes Cloudflare's checks, so we shell out to it first. When curl is not
-/// installed (e.g. Linux builds / the Flatpak sandbox) we fall back to reqwest
-/// with full browser headers and one retry.
+/// NameMC is behind Cloudflare and sometimes blocks plain HTTP clients. The
+/// Windows system curl.exe (built on SChannel) usually passes Cloudflare's
+/// checks, so we try it first (with its console window suppressed). When curl
+/// is unavailable (e.g. Linux builds / the Flatpak sandbox) or gets challenged,
+/// we fall back to reqwest with full browser headers.
 async fn fetch_profile_html(ign: &str) -> Result<String, String> {
     let url = format!("https://namemc.com/profile/{}", urlencoding::encode(ign));
 
     // 1. Try curl with browser-like headers.
     match curl_fetch(&url).await {
         Ok(html) if !html.trim().is_empty() => {
-            if is_challenge(&html) {
-                return Err(
-                    "NameMC is showing a Cloudflare challenge. Wait a few seconds and try again."
-                        .into(),
-                );
+            if !is_challenge(&html) {
+                return Ok(html);
             }
-            return Ok(html);
+            crate::dbg_log!("fetch_profile_html: curl got a Cloudflare challenge, trying reqwest");
         }
-        Err(e) if !e.contains("Failed to launch curl") => {
-            return Err(e);
+        Err(e) if e.contains("Failed to launch curl") => {
+            crate::dbg_log!("fetch_profile_html: curl unavailable ({e}), using reqwest");
+        }
+        Err(e) => {
+            crate::dbg_log!("fetch_profile_html: curl error ({e}), trying reqwest");
         }
         _ => {}
     }
 
-    // 2. curl is unavailable — fall back to reqwest.
+    // 2. Fall back to reqwest with full browser headers and one retry.
     match reqwest_fetch(&url).await {
         Ok(html) if !html.trim().is_empty() => {
             if is_challenge(&html) {
@@ -70,9 +69,13 @@ async fn fetch_profile_html(ign: &str) -> Result<String, String> {
     }
 }
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+/// Spawn curl with its console window suppressed so no cmd flashes on screen.
 async fn curl_fetch(url: &str) -> Result<String, String> {
-    let output = tokio::process::Command::new(curl_path())
-        .arg("-sSL")
+    let mut cmd = tokio::process::Command::new(curl_path());
+    cmd.arg("-sSL")
         .arg("--compressed")
         .arg("--max-time")
         .arg("25")
@@ -84,7 +87,10 @@ async fn curl_fetch(url: &str) -> Result<String, String> {
         .arg("Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
         .arg("-H")
         .arg("Accept-Language: en-US,en;q=0.9")
-        .arg(&url)
+        .arg(&url);
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000);
+    let output = cmd
         .output()
         .await
         .map_err(|e| format!("Failed to launch curl: {}", e))?;
@@ -104,8 +110,19 @@ async fn reqwest_fetch(url: &str) -> Result<String, String> {
     for attempt in 1..=2 {
         let resp = client
             .get(url)
-            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .header("User-Agent", BROWSER_UA)
+            .header(
+                "Accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            )
             .header("Accept-Language", "en-US,en;q=0.9")
+            .header("sec-ch-ua", "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"")
+            .header("sec-ch-ua-mobile", "?0")
+            .header("sec-ch-ua-platform", "\"Windows\"")
+            .header("Sec-Fetch-Dest", "document")
+            .header("Sec-Fetch-Mode", "navigate")
+            .header("Sec-Fetch-Site", "none")
+            .header("Upgrade-Insecure-Requests", "1")
             .header("Referer", "https://namemc.com/")
             .send()
             .await;

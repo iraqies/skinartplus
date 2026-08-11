@@ -962,8 +962,8 @@ async function waitForNextSkin(num, skinPath) {
   dom.pollText.textContent = 'Waiting for skin to propagate...';
   if (state.ign) dom.confirmHead.src = 'https://mc-heads.net/head/' + encodeURIComponent(state.ign) + '/128?t=' + Date.now();
 
-  const maxAttempts = 12;
-  const interval = 10000;
+  const maxAttempts = 60;
+  const interval = 2000;
 
   return new Promise((resolve) => {
     let resolved = false;
@@ -1006,6 +1006,8 @@ async function waitForNextSkin(num, skinPath) {
               finish();
               return;
             }
+          } else if (nmResult && nmResult.error) {
+            dom.pollText.textContent = 'NameMC: ' + nmResult.error;
           }
         } catch (e) {
           dom.pollText.textContent = 'Check failed: ' + e.message;
@@ -1018,7 +1020,7 @@ async function waitForNextSkin(num, skinPath) {
           finish();
         }
       }, interval);
-    }, 10000);
+    }, 3000);
   });
 }
 
