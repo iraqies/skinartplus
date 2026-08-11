@@ -4,7 +4,7 @@
 
 # Skinart+
 
-**Turn pixel art into Minecraft skins and upload them straight to NameMC**
+**Turn pixel art into Minecraft skinarts and upload them straight to NameMC**
 
 [![GitHub release](https://img.shields.io/github/v/release/iraqies/skinartplus?color=14b8a6&label=release)](https://github.com/iraqies/skinartplus/releases)
 [![Stars](https://img.shields.io/github/stars/iraqies/skinartplus?color=14b8a6)](https://github.com/iraqies/skinartplus/stargazers)
@@ -13,19 +13,20 @@
 [![Pull requests](https://img.shields.io/github/issues-pr/iraqies/skinartplus?color=14b8a6)](https://github.com/iraqies/skinartplus/pulls)
 [![Contributors](https://img.shields.io/github/contributors/iraqies/skinartplus?color=14b8a6)](https://github.com/iraqies/skinartplus/graphs/contributors)
 [![License](https://img.shields.io/github/license/iraqies/skinartplus?color=14b8a6)](https://github.com/iraqies/skinartplus)
+[![Views](https://api.visitorbadge.io/api/visitors?path=iraqies.skinartplus&label=views&labelColor=%23222&countColor=%2314b8a6)](https://github.com/iraqies/skinartplus)
 
 </div>
 
-Skinart+ is a desktop app that converts images into 64×64 Minecraft skin art. It supports NameMC account integration, batch generation across every layer combination, template base skins, and a custom watermark — all wrapped in a fast Tauri (Rust + WebView) shell.
+Skinart+ is a desktop app that converts images into 64×64 Minecraft skinart. It supports NameMC account integration, batch generation across every layer combination, template base skinarts, and a custom watermark — all wrapped in a fast Tauri (Rust + WebView) shell.
 
 ---
 
 ## ✨ Features
 
-- **Image → skin conversion** — pick any image and get a ready-to-use Minecraft skin
-- **NameMC integration** — log in, preview your avatar, and upload skins with one click
+- **Image → skinart conversion** — pick any image and get a ready-to-use Minecraft skinart
+- **NameMC integration** — log in, preview your avatar, and upload skinarts with one click
 - **Batch generation** — generate every possible art layer combination automatically
-- **Template library** — hundreds of bundled base skins to build from
+- **Template library** — hundreds of bundled base skinarts to build from
 - **Watermark** — your art stays signed with the Skinart+ watermark
 - **Fast & light** — built with Tauri, so it uses a fraction of the memory of Electron apps
 
@@ -141,4 +142,6 @@ Tag a commit (`v1.0.1`, `v1.1.0`, …) and the workflow will attach all installe
 
 ## 📄 License
 
-This project is private and not yet published under an open-source license.
+Licensed under the [Creative Commons Attribution 4.0 International (CC BY 4.0)](LICENSE).
+
+You are free to **fork, modify, and redistribute** this project — but you **must give credit** to the original author (iraqies / Skinart+) and link back to the original project. The "Skinart+" name and logo are not covered by this license.
