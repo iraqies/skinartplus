@@ -21,19 +21,19 @@ Skinart+ is a desktop app that converts images into 64×64 Minecraft skinart. It
 
 ---
 
-## ✨ Features
+## Features
 
-- **Image → skinart conversion** — pick any image and get a ready-to-use Minecraft skinart
-- **NameMC integration** — log in, preview your avatar, and upload skinarts with one click
-- **Batch generation** — generate every possible art layer combination automatically
-- **Template library** — hundreds of bundled base skinarts to build from
-- **Fast & light** — built with Tauri, so it uses a fraction of the memory of Electron apps
+- **Image → skinart conversion**: pick any image and get a ready-to-use Minecraft skinart
+- **NameMC integration**: log in, preview your avatar, and upload skinarts with one click
+- **Batch generation**: generate every possible art layer combination automatically
+- **Template library**: hundreds of bundled base skinarts to build from
+- **Fast & light**: built with Tauri, so it uses a fraction of the memory of Electron apps
 
 ---
 
-## 🚀 Install
+## Install
 
-Prebuilt packages are produced automatically by GitHub Actions for every release. Grab the latest from the [Releases page](https://github.com/iraqies/skinartplus/releases).
+Grab the latest from the [Releases page](https://github.com/iraqies/skinartplus/releases).
 
 ### Windows
 
@@ -41,11 +41,11 @@ Prebuilt packages are produced automatically by GitHub Actions for every release
 SkinartPlus_1.0.0_x64-setup.exe
 ```
 
-Run the installer — no extra dependencies needed. It installs per-user, so no admin rights are required.
+Run the installer. no extra dependencies needed. It installs per-user, so no admin rights are required.
 
 ### Linux
 
-There is no single "Linux" — pick the package that matches your distro:
+pick the package that matches your distro:
 
 | Distro family | Format | Install |
 |---------------|--------|---------|
@@ -65,9 +65,9 @@ There is no single "Linux" — pick the package that matches your distro:
 
 ---
 
-## 🛠 Build from source
+## Build from source
 
-### Prerequisites
+### Requirements
 
 - [Rust](https://rustup.rs) (stable)
 - [Node.js](https://nodejs.org) LTS and npm
@@ -119,7 +119,7 @@ npm run tauri build
 
 ---
 
-## 📦 Packaging
+## Packaging
 
 This repository includes a [GitHub Actions workflow](.github/workflows/build.yml) that builds on every push and tag:
 
