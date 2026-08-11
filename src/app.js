@@ -395,20 +395,26 @@ dom.btnAuthStart.addEventListener('click', async () => {
     if (start.flow === 'code') {
       dom.dcCode.style.display = 'none';
       dom.dcUri.textContent = 'Open Microsoft sign-in';
-      dom.dcUri.href = start.verification_uri;
+      dom.dcUri.href = start.verificationUri;
       dom.btnOpenBrowser.onclick = () => {
-        window.__TAURI__.core.invoke('open_url', { url: start.verification_uri });
+        window.__TAURI__.core.invoke('open_url', { url: start.verificationUri }).catch((e) => {
+          dom.dcStatus.textContent = 'Error opening browser: ' + e.message;
+          dom.dcStatus.style.color = '#FF5555';
+        });
       };
       pollAuthCode();
     } else {
       dom.dcCode.style.display = '';
-      dom.dcUri.textContent = start.verification_uri;
-      dom.dcUri.href = start.verification_uri;
-      dom.dcCode.textContent = start.user_code;
+      dom.dcUri.textContent = start.verificationUri;
+      dom.dcUri.href = start.verificationUri;
+      dom.dcCode.textContent = start.userCode;
       dom.btnOpenBrowser.onclick = () => {
-        window.__TAURI__.core.invoke('open_url', { url: 'https://www.microsoft.com/link?otc=' + start.user_code });
+        window.__TAURI__.core.invoke('open_url', { url: 'https://www.microsoft.com/link?otc=' + start.userCode }).catch((e) => {
+          dom.dcStatus.textContent = 'Error opening browser: ' + e.message;
+          dom.dcStatus.style.color = '#FF5555';
+        });
       };
-      pollDeviceCode(start.device_code, start.interval * 1000);
+      pollDeviceCode(start.deviceCode, start.interval * 1000);
     }
   } catch (e) {
     dom.dcStatus.textContent = 'Error: ' + e.message;

@@ -16,7 +16,56 @@ const REDIRECT_URI: &str = env!("SKINARTPLUS_REDIRECT_URI");
 struct AuthCodeState {
     code: Option<String>,
     error: Option<String>,
+    completed: Option<PollResult>,
 }
+
+const CALLBACK_SUCCESS_HTML: &str = r##"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skinart+ - Signed in</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: radial-gradient(1200px 600px at 20% 0%, rgba(20,184,166,0.06), transparent 50%), radial-gradient(1000px 500px at 80% 100%, rgba(20,184,166,0.04), transparent 50%), #0f172a; color: #e2e8f0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  .card { background: #1e293b; border: 1px solid #334155; border-radius: 16px; padding: 44px 52px; text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.4); max-width: 400px; }
+  .check { width: 64px; height: 64px; margin: 0 auto 18px; border-radius: 50%; background: rgba(20,184,166,0.15); display: flex; align-items: center; justify-content: center; }
+  h1 { font-size: 20px; margin-bottom: 8px; }
+  p { color: #94a3b8; font-size: 14px; line-height: 1.5; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="check"><svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="#2dd4bf" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <h1>Signed in</h1>
+    <p>You can now close this tab and return to Skinart+.</p>
+  </div>
+</body>
+</html>"##;
+
+const CALLBACK_ERROR_HTML: &str = r##"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skinart+ - Sign-in failed</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  .card { background: #1e293b; border: 1px solid #334155; border-radius: 16px; padding: 44px 52px; text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.4); max-width: 400px; }
+  .check { width: 64px; height: 64px; margin: 0 auto 18px; border-radius: 50%; background: rgba(244,63,94,0.15); display: flex; align-items: center; justify-content: center; }
+  h1 { font-size: 20px; margin-bottom: 8px; }
+  p { color: #94a3b8; font-size: 14px; line-height: 1.5; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="check"><svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="#fb7185" stroke-width="2.5" stroke-linecap="round"/></svg></div>
+    <h1>Sign-in failed</h1>
+    <p>Something went wrong. Close this tab and try again in Skinart+.</p>
+  </div>
+</body>
+</html>"##;
 
 fn auth_code_state() -> &'static Mutex<AuthCodeState> {
     static STATE: OnceLock<Mutex<AuthCodeState>> = OnceLock::new();
@@ -30,6 +79,34 @@ fn redirect_host_port() -> (String, u16) {
         Some((host, port)) => (host.to_string(), port.parse().unwrap_or(80)),
         None => (host_port.to_string(), 80),
     }
+}
+
+fn urldecode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            b'%' if i + 2 < bytes.len() => {
+                if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                    out.push(v);
+                    i += 3;
+                } else {
+                    out.push(b'%');
+                    i += 1;
+                }
+            }
+            b => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 fn http_respond(stream: &mut TcpStream, status: u16, body: &str) -> std::io::Result<()> {
@@ -73,29 +150,18 @@ fn spawn_code_callback_server() -> Result<(), String> {
                     .split('&')
                     .filter_map(|kv| {
                         let mut it = kv.splitn(2, '=');
-                        Some((
-                            it.next()?.to_string(),
-                            it.next().unwrap_or("").to_string(),
-                        ))
+                        Some((urldecode(it.next()?), urldecode(it.next().unwrap_or(""))))
                     })
                     .collect();
                 if let Some(code) = params.get("code") {
                     state.code = Some(code.clone());
-                    let _ = http_respond(
-                        &mut stream,
-                        200,
-                        "<html><body><h2>Sign-in successful</h2><p>You can close this window.</p></body></html>",
-                    );
+                    let _ = http_respond(&mut stream, 200, CALLBACK_SUCCESS_HTML);
                 } else if let Some(err) = params
                     .get("error_description")
                     .or_else(|| params.get("error"))
                 {
                     state.error = Some(err.clone());
-                    let _ = http_respond(
-                        &mut stream,
-                        200,
-                        "<html><body><h2>Sign-in failed</h2><p>You can close this window.</p></body></html>",
-                    );
+                    let _ = http_respond(&mut stream, 200, CALLBACK_ERROR_HTML);
                 } else {
                     state.error = Some("No authorization code received".into());
                     let _ = http_respond(&mut stream, 400, "Missing code");
@@ -272,7 +338,7 @@ pub async fn start_auth() -> Result<AuthStartResult, String> {
     })
 }
 
-#[derive(Serialize, Default)]
+#[derive(Serialize, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct PollResult {
     pub status: String,
@@ -341,8 +407,11 @@ pub async fn poll_auth_token(device_code: String) -> PollResult {
 #[tauri::command]
 pub async fn poll_auth_code() -> PollResult {
     let (code, error) = {
-        let state = auth_code_state().lock().unwrap();
-        (state.code.clone(), state.error.clone())
+        let mut state = auth_code_state().lock().unwrap();
+        if let Some(done) = state.completed.clone() {
+            return done;
+        }
+        (state.code.take(), state.error.clone())
     };
     let Some(code) = code else {
         return PollResult {
@@ -357,10 +426,10 @@ pub async fn poll_auth_code() -> PollResult {
         ("code", code.as_str()),
         ("redirect_uri", REDIRECT_URI),
     ]);
-    match ms_token(body).await {
+    let result = match ms_token(body).await {
         Ok(json) => {
             if let Some(err) = json.get("error").and_then(|v| v.as_str()) {
-                return PollResult {
+                PollResult {
                     status: "error".into(),
                     message: Some(
                         json.get("error_description")
@@ -369,24 +438,25 @@ pub async fn poll_auth_code() -> PollResult {
                             .to_string(),
                     ),
                     ..Default::default()
-                };
-            }
-            let access = json["access_token"].as_str().unwrap_or("");
-            match exchange_for_minecraft(access).await {
-                Ok(bearer) => PollResult {
-                    status: "success".into(),
-                    bearer_token: Some(bearer),
-                    refresh_token: json
-                        .get("refresh_token")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
-                    ..Default::default()
-                },
-                Err(e) => PollResult {
-                    status: "error".into(),
-                    message: Some(e),
-                    ..Default::default()
-                },
+                }
+            } else {
+                let access = json["access_token"].as_str().unwrap_or("");
+                match exchange_for_minecraft(access).await {
+                    Ok(bearer) => PollResult {
+                        status: "success".into(),
+                        bearer_token: Some(bearer),
+                        refresh_token: json
+                            .get("refresh_token")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                        ..Default::default()
+                    },
+                    Err(e) => PollResult {
+                        status: "error".into(),
+                        message: Some(e),
+                        ..Default::default()
+                    },
+                }
             }
         }
         Err(e) => PollResult {
@@ -394,7 +464,14 @@ pub async fn poll_auth_code() -> PollResult {
             message: Some(e),
             ..Default::default()
         },
+    };
+    {
+        let mut state = auth_code_state().lock().unwrap();
+        state.code = None;
+        state.error = None;
+        state.completed = Some(result.clone());
     }
+    result
 }
 
 #[derive(Serialize, Default)]

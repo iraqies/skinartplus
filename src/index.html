@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=10">
 <script>
   window.addEventListener('keydown', function (e) {
     var k = e.key ? e.key.toLowerCase() : '';
@@ -23,6 +23,7 @@
 
 <div class="topbar">
   <div class="topbar-left">
+    <img class="logo-img" src="lib/logo.png" alt="Skinart+">
     <h1 class="logo">Skinart+</h1>
   </div>
   <div class="topbar-right">
@@ -400,9 +401,9 @@
       <button id="btn-close-info" class="btn-close">&times;</button>
     </div>
     <div class="modal-body">
+      <img class="info-logo-img" src="lib/logo.png" alt="Skinart+">
       <p class="info-text">This project is made and maintained by <strong>iraqies</strong>.</p>
       <p class="info-desc">Turn any image into Minecraft skinarts, tile by tile.</p>
-      <p class="info-version" id="info-version">Version --</p>
       <div class="info-links">
         <button type="button" class="info-link" data-url="https://discord.gg/MjrdzgwNN4">
           <span class="info-icon">
@@ -432,12 +433,18 @@
           </span>
         </button>
       </div>
+      <div class="info-credits">
+        <p class="info-credit">Iraqies : founder &amp; Developer</p>
+        <p class="info-credit">GoldenGR : auth provider</p>
+        <p class="info-credit">Hyloduck : logo design</p>
+      </div>
+      <p class="info-version" id="info-version">Version --</p>
     </div>
   </div>
 </div>
 
 
 
-<script src="app.js?v=6"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>
