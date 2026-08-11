@@ -80,6 +80,9 @@ async fn curl_fetch(url: &str) -> Result<String, String> {
         .arg("--max-time")
         .arg("25")
         .arg("--retry")
+        .arg("3")
+        .arg("--retry-all-errors")
+        .arg("--retry-delay")
         .arg("2")
         .arg("-A")
         .arg(BROWSER_UA)
@@ -107,7 +110,7 @@ async fn curl_fetch(url: &str) -> Result<String, String> {
 async fn reqwest_fetch(url: &str) -> Result<String, String> {
     let client = http_client();
     let mut last_err: Option<String> = None;
-    for attempt in 1..=2 {
+    for attempt in 1..=3 {
         let resp = client
             .get(url)
             .header("User-Agent", BROWSER_UA)
@@ -135,11 +138,21 @@ async fn reqwest_fetch(url: &str) -> Result<String, String> {
             }
             Err(e) => last_err = Some(e.to_string()),
         }
-        if attempt == 1 {
-            tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+        let backoff = match attempt {
+            1 => 1500,
+            2 => 4000,
+            _ => 0,
+        };
+        if backoff > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(backoff)).await;
         }
     }
-    Err(last_err.unwrap_or_else(|| "unknown error".into()))
+    let msg = last_err.unwrap_or_else(|| "unknown error".into());
+    if msg == "HTTP 403" {
+        Err("NameMC is temporarily blocking this request (HTTP 403). Too many rapid requests can trigger a short block — wait a minute and try again.".into())
+    } else {
+        Err(format!("NameMC fetch failed: {}", msg))
+    }
 }
 
 fn extract_hashes(html: &str) -> Vec<String> {

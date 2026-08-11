@@ -959,7 +959,7 @@ async function waitForNextSkin(num, skinPath) {
   dom.confirmHint.textContent = 'Waiting for skin to appear on session server.';
   dom.btnSkipWait.style.display = '';
   dom.pollStatus.className = 'poll-status';
-  dom.pollText.textContent = 'Waiting for skin to propagate...';
+  dom.pollText.textContent = 'Waiting for session server to update...';
   if (state.ign) dom.confirmHead.src = 'https://mc-heads.net/head/' + encodeURIComponent(state.ign) + '/128?t=' + Date.now();
 
   const maxAttempts = 60;
@@ -991,23 +991,32 @@ async function waitForNextSkin(num, skinPath) {
         if (state.cancelUpload) { finish(); return; }
         attempts++;
         dom.pollStatus.className = 'poll-status';
-        dom.pollText.textContent = 'Checking NameMC... (' + attempts + '/' + maxAttempts + ')';
+        dom.pollText.textContent = 'Checking session server... (' + attempts + '/' + maxAttempts + ')';
 
         try {
-          const nmResult = await window.__TAURI__.core.invoke('scrape_namemc_skin', { ign: state.ign });
-          if (resolved) return;
-          if (nmResult.success && nmResult.skinDataBase64 && uploadedBase64) {
-            const ratio = await compareFaces(nmResult.skinDataBase64, uploadedBase64);
+          let skinBase64 = null;
+          if (state.uuid) {
+            const res = await window.__TAURI__.core.invoke('download_skin_texture', { uuid: state.uuid });
+            if (resolved) return;
+            if (res.success && res.data) skinBase64 = res.data;
+            else if (res.error) dom.pollText.textContent = 'Session server: ' + res.error;
+          }
+          if (!skinBase64 && state.ign) {
+            const nmResult = await window.__TAURI__.core.invoke('scrape_namemc_skin', { ign: state.ign });
+            if (resolved) return;
+            if (nmResult.success && nmResult.skinDataBase64) skinBase64 = nmResult.skinDataBase64;
+            else if (nmResult.error) dom.pollText.textContent = 'NameMC: ' + nmResult.error;
+          }
+          if (skinBase64 && uploadedBase64) {
+            const ratio = await compareFaces(skinBase64, uploadedBase64);
             if (ratio >= 1.0) {
               dom.confirmTitle.textContent = 'Skin ' + num + ' verified!';
               dom.pollStatus.className = 'poll-status done';
-              dom.pollText.textContent = 'Verified on NameMC!';
+              dom.pollText.textContent = 'Verified on session server!';
               dom.confirmHint.style.display = 'none';
               finish();
               return;
             }
-          } else if (nmResult && nmResult.error) {
-            dom.pollText.textContent = 'NameMC: ' + nmResult.error;
           }
         } catch (e) {
           dom.pollText.textContent = 'Check failed: ' + e.message;
