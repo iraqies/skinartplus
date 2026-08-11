@@ -11,6 +11,7 @@ let state = {
   uuid: null,
   pollTimer: null,
   uploadRunning: false,
+  cancelUpload: false,
   claiming: false,
   templates: [],
   tileData: {},
@@ -38,6 +39,7 @@ const dom = {
   confirmHint: document.getElementById('confirm-hint'),
   confirmHead: document.getElementById('confirm-head'),
   btnSkipWait: document.getElementById('btn-skip-wait'),
+  btnCancelUpload: document.getElementById('btn-cancel-upload'),
   pollStatus: document.getElementById('poll-status'),
   pollText: document.getElementById('poll-text'),
   btnRestart: document.getElementById('btn-restart'),
@@ -374,7 +376,38 @@ function openSigninModal() {
   dom.dcStatus.textContent = '';
   dom.btnAuthStart.disabled = false;
   dom.btnAuthStart.textContent = 'Start Sign In';
+  document.getElementById('qr-box').style.display = 'none';
+  window.__TAURI__.core.invoke('auth_flow_mode').then(setTokenHelpText).catch(() => setTokenHelpText('device'));
   refreshSavedAccountsList();
+}
+
+function setTokenHelpText(flow) {
+  const list = document.getElementById('token-help-list');
+  if (flow === 'code') {
+    list.innerHTML =
+      '<li>Click <strong>Start Sign In</strong> below</li>' +
+      '<li>The Microsoft sign-in page opens in your browser</li>' +
+      '<li>Approve and sign in with your Microsoft account</li>' +
+      '<li>The app detects the login automatically</li>';
+  } else {
+    list.innerHTML =
+      '<li>Click <strong>Start Sign In</strong> below</li>' +
+      '<li>A URL and code will appear</li>' +
+      '<li>Open the URL (or scan the QR) and enter the code</li>' +
+      '<li>The app detects the login automatically</li>';
+  }
+}
+
+async function showQr(content) {
+  const box = document.getElementById('qr-box');
+  const img = document.getElementById('qr-img');
+  try {
+    const qr = await window.__TAURI__.core.invoke('auth_qr', { content });
+    img.src = qr;
+    box.style.display = 'flex';
+  } catch (e) {
+    box.style.display = 'none';
+  }
 }
 
 dom.btnCloseModal.addEventListener('click', () => { dom.signinModal.style.display = 'none'; });
@@ -396,6 +429,7 @@ dom.btnAuthStart.addEventListener('click', async () => {
       dom.dcCode.style.display = 'none';
       dom.dcUri.textContent = 'Open Microsoft sign-in';
       dom.dcUri.href = start.verificationUri;
+      showQr(start.verificationUri);
       dom.btnOpenBrowser.onclick = () => {
         window.__TAURI__.core.invoke('open_url', { url: start.verificationUri }).catch((e) => {
           dom.dcStatus.textContent = 'Error opening browser: ' + e.message;
@@ -408,6 +442,7 @@ dom.btnAuthStart.addEventListener('click', async () => {
       dom.dcUri.textContent = start.verificationUri;
       dom.dcUri.href = start.verificationUri;
       dom.dcCode.textContent = start.userCode;
+      showQr('https://www.microsoft.com/link?otc=' + start.userCode);
       dom.btnOpenBrowser.onclick = () => {
         window.__TAURI__.core.invoke('open_url', { url: 'https://www.microsoft.com/link?otc=' + start.userCode }).catch((e) => {
           dom.dcStatus.textContent = 'Error opening browser: ' + e.message;
@@ -626,6 +661,20 @@ async function loadSavedAccount(ign) {
   }
 }
 
+// ── Auto-login last used account ─────────────────────────────────
+
+async function autoLoginLastUsed() {
+  let accounts = [];
+  try {
+    accounts = await window.__TAURI__.core.invoke('load_accounts');
+  } catch (e) { return; }
+  if (!accounts.length) return;
+  const lastUsed = accounts.find(a => a.lastUsed) || accounts[0];
+  if (lastUsed && lastUsed.refreshToken) {
+    await loadSavedAccount(lastUsed.ign);
+  }
+}
+
 // ── Dropdown Actions ─────────────────────────────────────────────
 
 dom.ddNamemc.addEventListener('click', () => {
@@ -708,8 +757,12 @@ async function runUpload(startNum) {
   if (state.uploadRunning) return;
   if (!state.bearerToken) { openSigninModal(); return; }
   state.uploadRunning = true;
+  state.cancelUpload = false;
   dom.btnStart.disabled = true;
   dom.btnStart.textContent = 'Uploading...';
+  dom.btnCancelUpload.style.display = '';
+  dom.btnCancelUpload.disabled = false;
+  dom.btnCancelUpload.textContent = 'Cancel Upload';
 
   dom.confirmArea.style.display = '';
   dom.confirmTitle.textContent = 'Starting upload...';
@@ -752,8 +805,23 @@ async function runUpload(startNum) {
     if (settings.uploadDelay > 0) {
       dom.pollStatus.className = 'poll-status';
       dom.pollText.textContent = 'Waiting ' + settings.uploadDelay + 's before next skin...';
-      await new Promise(r => setTimeout(r, settings.uploadDelay * 1000));
+      await delayOrCancel(settings.uploadDelay * 1000);
     }
+    if (state.cancelUpload) {
+      markRemainingSkipped();
+      break;
+    }
+  }
+  if (state.cancelUpload) {
+    dom.btnStart.textContent = 'Start Upload';
+    dom.btnStart.disabled = false;
+    dom.btnStart.onclick = () => runUpload(null);
+    dom.btnCancelUpload.style.display = 'none';
+    dom.confirmTitle.textContent = 'Upload cancelled';
+    dom.pollStatus.className = 'poll-status';
+    dom.pollText.textContent = 'Remaining skins were skipped.';
+    state.uploadRunning = false;
+    return;
   }
   if (state.originalSkinPath && state.skinModel) {
     highlightGridCell(27);
@@ -773,6 +841,19 @@ async function runUpload(startNum) {
       await waitForNextSkin(27, state.originalSkinPath, null);
     }
   }
+  if (state.cancelUpload) {
+    dom.btnStart.textContent = 'Start Upload';
+    dom.btnStart.disabled = false;
+    dom.btnStart.onclick = () => runUpload(null);
+    dom.btnCancelUpload.style.display = 'none';
+    dom.confirmTitle.textContent = 'Upload cancelled';
+    dom.pollStatus.className = 'poll-status';
+    dom.pollText.textContent = 'Remaining skins were skipped.';
+    state.uploadRunning = false;
+    return;
+  }
+  dom.btnCancelUpload.style.display = 'none';
+  state.cancelUpload = false;
   dom.btnStart.textContent = 'Done!';
   state.uploadRunning = false;
   const failedSkins = state.skins.filter(s => {
@@ -794,6 +875,35 @@ async function runUpload(startNum) {
 }
 
 dom.btnStart.addEventListener('click', () => runUpload(null));
+
+dom.btnCancelUpload.addEventListener('click', () => {
+  if (!state.uploadRunning) return;
+  state.cancelUpload = true;
+  dom.btnCancelUpload.disabled = true;
+  dom.btnCancelUpload.textContent = 'Cancelling...';
+});
+
+function delayOrCancel(ms) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    const check = setInterval(() => {
+      if (state.cancelUpload) {
+        clearTimeout(timer);
+        clearInterval(check);
+        resolve();
+      }
+    }, 100);
+  });
+}
+
+function markRemainingSkipped() {
+  for (const s of state.skins) {
+    const cell = document.getElementById('cell-' + s.num);
+    if (cell && !cell.classList.contains('failed') && !cell.classList.contains('uploaded')) {
+      updateUploadCell(s.num, 'skip');
+    }
+  }
+}
 
 function highlightGridCell(num) {
   document.querySelectorAll('.upload-grid .cell').forEach(c => c.classList.remove('active-cell'));
@@ -878,6 +988,7 @@ async function waitForNextSkin(num, skinPath) {
       } catch {}
 
       timer = setInterval(async () => {
+        if (state.cancelUpload) { finish(); return; }
         attempts++;
         dom.pollStatus.className = 'poll-status';
         dom.pollText.textContent = 'Checking NameMC... (' + attempts + '/' + maxAttempts + ')';
@@ -1106,7 +1217,8 @@ dom.btnRestart.addEventListener('click', async () => {
   state = {
     inputPath: null, baseSkinPath: null, originalSkinPath: null, originalSkinHead: null,
     lastTileDataUrl: null, skins: [], bearerToken: savedBearer, refreshToken: savedRefresh,
-    ign: savedIgn, uuid: savedUuid, pollTimer: null, uploadRunning: false, claiming: false,
+    ign: savedIgn, uuid: savedUuid, pollTimer: null, uploadRunning: false, cancelUpload: false,
+    claiming: false,
     templates: state.templates, tileData: {}, skinModel: null, originalSkinSource: null,
     usedTemplate: null,
   };
@@ -1140,6 +1252,10 @@ dom.btnRestart.addEventListener('click', async () => {
 
 updateAccountArea();
 refreshSavedAccountsList();
+autoLoginLastUsed();
+window.__TAURI__.core.invoke('get_os_platform').then((p) => {
+  if (String(p).toLowerCase().indexOf('linux') !== -1) document.body.classList.add('os-linux');
+}).catch(() => {});
 loadTemplates();
 checkForUpdates();
 setVersionInfo();
@@ -1239,6 +1355,7 @@ async function checkForUpdates() {
     undoStack: [],
     redoStack: [],
     drawing: false,
+    strokePushed: false,
     hasDrawn: false
   };
 
@@ -1318,7 +1435,10 @@ async function checkForUpdates() {
     const x = Math.floor((e.clientX - rect.left) * scaleX);
     const y = Math.floor((e.clientY - rect.top) * scaleY);
     if (x < 0 || y < 0 || x >= 72 || y >= 24) return;
-    designPushUndo();
+    if (!designState.strokePushed) {
+      designPushUndo();
+      designState.strokePushed = true;
+    }
     if (designState.fillMode) {
       const hex = designState.color.replace('#','');
       const r = parseInt(hex.substring(0,2),16);
@@ -1476,6 +1596,7 @@ async function checkForUpdates() {
       return;
     }
     designState.drawing = true;
+    designState.strokePushed = false;
     designDrawPixel(e);
   });
   designCanvas.addEventListener('mousemove', (e) => {
@@ -1490,9 +1611,13 @@ async function checkForUpdates() {
     }
     if (designState.drawing) designDrawPixel(e);
   });
-  designCanvas.addEventListener('mouseup', () => { designState.drawing = false; });
+  designCanvas.addEventListener('mouseup', () => {
+    designState.drawing = false;
+    designState.strokePushed = false;
+  });
   designCanvas.addEventListener('mouseleave', () => {
     designState.drawing = false;
+    designState.strokePushed = false;
     if (designState.textPlacementMode) designHideTextPreview();
   });
 
@@ -1818,6 +1943,33 @@ function saveSettings(s) {
 
 let settings = loadSettings();
 
+function zoomSupported() {
+  try {
+    if (window.CSS && CSS.supports) return CSS.supports('zoom', '2');
+  } catch (e) {}
+  const probe = document.createElement('div');
+  probe.style.zoom = 2;
+  return probe.style.zoom === '2';
+}
+
+const zoomOk = zoomSupported();
+
+function applyGuiScale() {
+  const scale = settings.guiScale / 100;
+  const app = document.getElementById('app');
+  if (zoomOk) {
+    document.body.style.zoom = scale;
+    if (app) { app.style.transform = ''; app.style.transformOrigin = ''; app.style.marginBottom = ''; }
+  } else {
+    document.body.style.zoom = '';
+    if (app) {
+      app.style.transformOrigin = 'top center';
+      app.style.transform = 'scale(' + scale + ')';
+      app.style.marginBottom = ((scale - 1) * app.scrollHeight) + 'px';
+    }
+  }
+}
+
 function applySettings() {
   document.body.dataset.theme = settings.theme;
   const themePicker = document.getElementById('settings-theme');
@@ -1826,7 +1978,7 @@ function applySettings() {
       btn.classList.toggle('active', btn.dataset.theme === settings.theme);
     });
   }
-  document.body.style.zoom = (settings.guiScale / 100).toString();
+  applyGuiScale();
   const scaleSlider = document.getElementById('settings-gui-scale');
   const scaleVal = document.getElementById('settings-gui-scale-val');
   if (scaleSlider) scaleSlider.value = settings.guiScale;

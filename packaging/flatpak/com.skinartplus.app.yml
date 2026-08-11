@@ -10,6 +10,9 @@ finish-args:
   - --device=dri # OpenGL, not necessary for all projects
   - --share=ipc
   - --share=network
+  - --socket=session-bus # Needed for desktop/file portals
+  - --talk-name=org.freedesktop.portal.Desktop # File dialogs, settings, etc.
+  - --talk-name=org.freedesktop.portal.OpenURI # Open links in the host browser
   - --talk-name=org.kde.StatusNotifierWatcher
   - --filesystem=xdg-run/tray-icon:create
 
@@ -27,10 +30,10 @@ modules:
     build-commands:
       - set -e
 
-      # Extract the deb package
+      # Extract the deb package (handles data.tar.gz/.xz/.zst)
       - mkdir deb-extract
       - ar -x *.deb --output deb-extract
-      - tar -C deb-extract -xf deb-extract/data.tar.gz
+      - cd deb-extract && for t in data.tar.*; do tar -xf "$t"; done && cd -
 
       # Copy binary
       - 'install -Dm755 deb-extract/usr/bin/skinartplus /app/bin/skinartplus'
@@ -44,7 +47,6 @@ modules:
       - sed -i 's/^Icon=.*/Icon=com.skinartplus.app/' deb-extract/usr/share/applications/Skinart+.desktop
       - install -Dm644 deb-extract/usr/share/applications/Skinart+.desktop /app/share/applications/com.skinartplus.app.desktop
 
-      # Copy icons
-      - install -Dm644 deb-extract/usr/share/icons/hicolor/128x128/apps/skinartplus.png /app/share/icons/hicolor/128x128/apps/com.skinartplus.app.png
-      - install -Dm644 deb-extract/usr/share/icons/hicolor/32x32/apps/skinartplus.png /app/share/icons/hicolor/32x32/apps/com.skinartplus.app.png
+      # Copy icons (all available sizes)
+      - for size in 16 22 24 32 48 64 128 256 512; do install -Dm644 "deb-extract/usr/share/icons/hicolor/${size}x${size}/apps/skinartplus.png" "/app/share/icons/hicolor/${size}x${size}/apps/com.skinartplus.app.png" 2>/dev/null || true; done
       - install -Dm644 flatpak.metainfo.xml /app/share/metainfo/com.skinartplus.app.metainfo.xml

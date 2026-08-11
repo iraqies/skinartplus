@@ -3,6 +3,17 @@ mod mc;
 
 use tauri::Manager;
 
+/// Debug output helper. Prints to stderr whenever the app was started with
+/// `SKINARTPLUS_DEBUG=1` (e.g. `flatpak run --env=SKINARTPLUS_DEBUG=1 ...`).
+macro_rules! dbg_log {
+    ($($arg:tt)*) => {
+        if std::env::var("SKINARTPLUS_DEBUG").map(|v| v == "1").unwrap_or(false) {
+            eprintln!("[skinartplus] {}", format!($($arg)*));
+        }
+    };
+}
+pub(crate) use dbg_log;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -20,6 +31,8 @@ pub fn run() {
             commands::files::save_temp_buffer,
             commands::image::generate_all,
             commands::auth::start_auth,
+            commands::auth::auth_flow_mode,
+            commands::auth::auth_qr,
             commands::auth::poll_auth_token,
             commands::auth::poll_auth_code,
             commands::auth::refresh_saved_token,
@@ -48,6 +61,7 @@ pub fn run() {
         ])
         .setup(|app| {
             let version = app.package_info().version.to_string();
+            dbg_log!("app starting v{} on {}", version, std::env::consts::OS);
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_title(&format!("Skinart+ v{}", version));
             }

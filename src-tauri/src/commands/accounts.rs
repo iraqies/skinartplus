@@ -52,7 +52,10 @@ pub struct SaveAccountRequest {
 #[tauri::command]
 pub fn save_account(app: AppHandle, account: SaveAccountRequest) -> Result<Vec<Value>, String> {
     let mut accounts = read_accounts(&app);
-    let mut entry = serde_json::json!({ "ign": account.ign });
+    for acct in accounts.iter_mut() {
+        acct["lastUsed"] = serde_json::json!(false);
+    }
+    let mut entry = serde_json::json!({ "ign": account.ign, "lastUsed": true });
     if let Some(uuid) = account.uuid {
         if !uuid.is_empty() {
             entry["uuid"] = Value::String(uuid);
@@ -84,6 +87,9 @@ pub fn save_account(app: AppHandle, account: SaveAccountRequest) -> Result<Vec<V
 pub fn delete_account(app: AppHandle, ign: String) -> Result<Vec<Value>, String> {
     let mut accounts = read_accounts(&app);
     accounts.retain(|a| a["ign"].as_str() != Some(&ign));
+    if !accounts.is_empty() && accounts.iter().all(|a| a["lastUsed"].as_bool().unwrap_or(false) != true) {
+        accounts[0]["lastUsed"] = serde_json::json!(true);
+    }
     write_accounts(&app, &accounts)?;
     Ok(accounts)
 }

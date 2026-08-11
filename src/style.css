@@ -602,7 +602,7 @@ body::before {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 28px;
+  padding: 16px 32px;
   background: var(--surface-overlay);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -631,6 +631,25 @@ body::before {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+}
+
+/* ── Linux (smaller topbar) ─────────────────────────────── */
+
+body.os-linux .topbar {
+  padding: 8px 20px;
+}
+
+body.os-linux .logo-img {
+  height: 32px;
+}
+
+body.os-linux .logo {
+  font-size: 20px;
+}
+
+body.os-linux .btn-signin {
+  padding: 6px 16px;
+  font-size: 13px;
 }
 
 /* ── Update Banner ───────────────────────────────────────── */
@@ -843,7 +862,7 @@ body::before {
 }
 
 .modal-body {
-  padding: 24px 26px;
+  padding: 28px 32px;
 }
 
 /* ── Info Modal ─────────────────────────────────────────── */
@@ -1011,6 +1030,46 @@ body::before {
 
 .token-help a { color: var(--teal-400); text-decoration: none; transition: color 0.2s; }
 .token-help a:hover { color: var(--teal-300); }
+
+.token-help-body {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  margin-top: 14px;
+}
+
+.token-help-body ol {
+  margin: 0 0 0 24px;
+  flex: 1;
+}
+
+.qr-box {
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+}
+
+.qr-box img {
+  width: 150px;
+  height: 150px;
+  display: block;
+  image-rendering: pixelated;
+}
+
+.qr-caption {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+@media (max-width: 560px) {
+  .token-help-body { flex-direction: column; }
+  .qr-box { align-self: center; }
+}
 
 .token-help kbd {
   background: var(--surface-raised);
@@ -1317,7 +1376,7 @@ body::before {
 .app {
   max-width: 1320px;
   margin: 0 auto;
-  padding: 28px 40px 80px;
+  padding: 32px 48px 88px;
   position: relative;
   z-index: 1;
 }
@@ -1409,7 +1468,7 @@ h3 {
   background: var(--surface);
   border: 2px dashed var(--border);
   border-radius: var(--radius-lg);
-  padding: 38px 28px;
+  padding: 42px 34px;
   margin-bottom: 16px;
   text-align: center;
   cursor: pointer;
@@ -1871,6 +1930,28 @@ button:disabled:hover {
 .btn-skip:hover {
   color: var(--text);
   border-color: var(--text-muted);
+}
+
+.btn-danger {
+  color: var(--coral-400);
+  border-color: var(--coral-700);
+}
+
+.btn-danger:hover {
+  color: #fff;
+  background: var(--coral-600, #f43f5e);
+  border-color: var(--coral-600, #f43f5e);
+}
+
+.btn-danger:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn-danger:disabled:hover {
+  color: var(--coral-400);
+  background: transparent;
+  border-color: var(--coral-700);
 }
 
 .confirm-btns {

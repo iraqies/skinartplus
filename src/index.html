@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=10">
+<link rel="stylesheet" href="style.css?v=11">
 <script>
   window.addEventListener('keydown', function (e) {
     var k = e.key ? e.key.toLowerCase() : '';
@@ -54,12 +54,18 @@
     <div class="modal-body">
       <details class="token-help">
         <summary>How does this work?</summary>
-        <ol>
-          <li>Click <strong>Start Sign In</strong> below</li>
-          <li>A code and URL will appear</li>
-          <li>Open the URL in any browser, enter the code, and sign in</li>
-          <li>The app detects the login automatically</li>
-        </ol>
+        <div class="token-help-body">
+          <ol id="token-help-list">
+            <li>Click <strong>Start Sign In</strong> below</li>
+            <li>The Microsoft sign-in page opens in your browser</li>
+            <li>Approve and sign in with your Microsoft account</li>
+            <li>The app detects the login automatically</li>
+          </ol>
+          <div id="qr-box" class="qr-box" style="display:none">
+            <img id="qr-img" src="" alt="QR code — scan with your phone">
+            <p class="qr-caption">Scan with your phone to sign in</p>
+          </div>
+        </div>
       </details>
       <div class="auth-section">
         <button id="btn-auth-start">Start Sign In</button>
@@ -309,6 +315,7 @@
       <p class="hint" id="confirm-hint">Waiting for skin to appear on session server.</p>
       <div class="confirm-btns">
         <button id="btn-skip-wait" class="btn-skip">Skip Wait</button>
+        <button id="btn-cancel-upload" class="btn-skip btn-danger" style="display:none">Cancel Upload</button>
       </div>
     </div>
   </div>
@@ -445,6 +452,6 @@
 
 
 
-<script src="app.js?v=7"></script>
+<script src="app.js?v=8"></script>
 </body>
 </html>

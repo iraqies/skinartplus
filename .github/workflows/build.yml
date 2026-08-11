@@ -81,8 +81,15 @@ jobs:
 
       - name: Place deb where manifest expects it
         run: |
+          set -e
+          VERSION=$(grep -m1 '"version"' src-tauri/tauri.conf.json | sed 's/.*: "\([^"]*\)".*/\1/')
+          ARCH=$(dpkg --print-architecture 2>/dev/null || echo amd64)
+          DEB="skinartplus_${VERSION}_${ARCH}.deb"
+          echo "Deb name: $DEB"
           mkdir -p src-tauri/target/release/bundle/deb
-          cp artifacts/deb/*.deb src-tauri/target/release/bundle/deb/skinartplus_1.0.0_amd64.deb
+          cp artifacts/deb/*.deb "src-tauri/target/release/bundle/deb/$DEB"
+          sed -i "s|path: ../../src-tauri/target/release/bundle/deb/[^ ]*|path: ../../src-tauri/target/release/bundle/deb/$DEB|" packaging/flatpak/com.skinartplus.app.yml
+          grep 'deb/' packaging/flatpak/com.skinartplus.app.yml
 
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         name: Build Flatpak

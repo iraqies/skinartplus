@@ -188,6 +188,7 @@ pub async fn run_claim(
     // 1. detect protocol version
     let detected = detect_protocol(&cfg.server, cfg.port).await;
     let protocol = detected.unwrap_or(763);
+    crate::dbg_log!("claim: protocol {} (detected {:?})", protocol, detected);
     let layout = match Layout::for_protocol(protocol) {
         Some(l) => l,
         None => {
@@ -214,16 +215,24 @@ pub async fn run_claim(
     mc.write_packet(0x00, &payload).await?;
 
     // login start
-    // 759-761: profile public key presence (false, we have no chat-signing key)
-    // 760+:    UUID presence + raw UUID
+    // 759 (1.19):        Name + HasPublicKey(bool)
+    // 760-761 (1.19.1/2): Name + HasSigData(bool) + Optional<ProfileKey> + Optional<UUID>
+    // 762+ (1.19.3+):     Name + Optional<ProfileKey> + Optional<UUID>
+    // We have no chat-signing key, so the profile key is always absent (VarInt 0).
+    // The absent marker must be sent even when the key is missing, otherwise the
+    // server misparses the following UUID and can't authenticate the player
+    // ("Not authenticated with Minecraft.net").
     let mut body = Vec::new();
     body.extend(varint_bytes(cfg.username.len() as i32));
     body.extend_from_slice(cfg.username.as_bytes());
-    if proto < 762 {
+    if proto == 759 {
         body.push(0x00);
-    }
-    if proto >= 760 {
-        body.push(0x01);
+    } else {
+        if proto < 762 {
+            body.push(0x00); // hasSigData = false
+        }
+        body.push(0x00); // Optional<ProfileKey> absent
+        body.push(0x01); // Optional<UUID> present
         body.extend_from_slice(&crypto::uuid_bytes(&cfg.uuid));
     }
     mc.write_packet(0x00, &body).await?;
@@ -250,25 +259,55 @@ pub async fn run_claim(
                 let secret = crypto::generate_shared_secret();
                 let server_id_hash = crypto::compute_server_id(&server_id, &secret, &public_key);
 
-                // mojang session join
+                // mojang session join (retry once — Mojang occasionally drops it)
                 let client = reqwest::Client::new();
                 let uuid_undashed = crypto::uuid_without_dashes(&cfg.uuid);
-                let resp = client
-                    .post("https://sessionserver.mojang.com/session/minecraft/join")
-                    .json(&serde_json::json!({
-                        "accessToken": cfg.bearer_token,
-                        "selectedProfile": uuid_undashed,
-                        "serverId": server_id_hash,
-                    }))
-                    .send()
-                    .await
-                    .map_err(|e| format!("Session join failed: {}", e))?;
-                if !resp.status().is_success() {
+                let mut join_ok = false;
+                for attempt in 1..=2 {
+                    if cancel.load(Ordering::Relaxed) {
+                        return Err("Cancelled".into());
+                    }
+                    let resp = client
+                        .post("https://sessionserver.mojang.com/session/minecraft/join")
+                        .json(&serde_json::json!({
+                            "accessToken": cfg.bearer_token,
+                            "selectedProfile": uuid_undashed,
+                            "serverId": server_id_hash,
+                        }))
+                        .send()
+                        .await
+                        .map_err(|e| format!("Session join failed: {}", e))?;
+                    if resp.status().is_success() {
+                        join_ok = true;
+                        break;
+                    }
+                    if attempt == 1 {
+                        emit("Session server busy, retrying...");
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+                    }
+                }
+                if !join_ok {
+                    let mut body = String::new();
+                    if let Ok(resp) = client
+                        .post("https://sessionserver.mojang.com/session/minecraft/join")
+                        .json(&serde_json::json!({
+                            "accessToken": cfg.bearer_token,
+                            "selectedProfile": uuid_undashed,
+                            "serverId": server_id_hash,
+                        }))
+                        .send()
+                        .await
+                    {
+                        body = resp.text().await.unwrap_or_default();
+                    }
+                    let preview: String = body.chars().take(200).collect();
+                    crate::dbg_log!("claim: session join failed: {}", preview);
                     return Err(format!(
-                        "Server rejected login (HTTP {}). Check that the signed-in account owns the skin/ign.",
-                        resp.status().as_u16()
+                        "Mojang rejected the session join (HTTP). Check that the signed-in account owns the skin/ign. {}",
+                        preview
                     ));
                 }
+                crate::dbg_log!("claim: session join OK");
 
                 let enc = crypto::encrypt_login(&public_key, &secret, &verify_token)?;
                 let mut ep = Vec::new();

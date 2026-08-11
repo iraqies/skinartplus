@@ -9,8 +9,9 @@
   </description>
   <launchable type="desktop-id">com.skinartplus.app.desktop</launchable>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>MIT</project_license>
-  <url type="homepage">https://github.com/</url>
+  <project_license>CC-BY-4.0</project_license>
+  <url type="homepage">https://github.com/iraqies/skinartplus</url>
+  <url type="bugtracker">https://github.com/iraqies/skinartplus/issues</url>
   <releases>
     <release version="1.0.0" date="2026-08-09"/>
   </releases>

@@ -1,5 +1,7 @@
 use crate::commands::files::{http_client, urlencode};
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use qrcode::render::svg;
+use qrcode::QrCode;
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -285,9 +287,36 @@ pub struct AuthStartResult {
     pub interval: i64,
 }
 
+/// "code" when the private app (client secret) is compiled in, "device" otherwise.
+#[tauri::command]
+pub fn auth_flow_mode() -> String {
+    if MC_CLIENT_SECRET.is_some() {
+        "code".into()
+    } else {
+        "device".into()
+    }
+}
+
+/// Render a QR code as an SVG data URL the frontend can drop into an <img>.
+#[tauri::command]
+pub fn auth_qr(content: String) -> Result<String, String> {
+    if content.is_empty() {
+        return Err("Nothing to encode".into());
+    }
+    let code = QrCode::with_error_correction_level(content.as_bytes(), qrcode::EcLevel::M)
+        .map_err(|e| e.to_string())?;
+    let svg_str = code
+        .render::<svg::Color>()
+        .min_dimensions(200, 200)
+        .quiet_zone(true)
+        .build();
+    Ok(format!("data:image/svg+xml;base64,{}", B64.encode(svg_str.as_bytes())))
+}
+
 #[tauri::command]
 pub async fn start_auth() -> Result<AuthStartResult, String> {
     if MC_CLIENT_SECRET.is_some() {
+        crate::dbg_log!("start_auth: code flow");
         spawn_code_callback_server()?;
         let url = format!(
             "https://login.microsoftonline.com/{}/oauth2/v2.0/authorize?client_id={}&response_type=code&redirect_uri={}&scope={}&prompt=select_account",
@@ -310,6 +339,7 @@ pub async fn start_auth() -> Result<AuthStartResult, String> {
         ("scope", "XboxLive.signin offline_access"),
     ]);
     let client = http_client();
+    crate::dbg_log!("start_auth: device flow");
     let resp = client
         .post(format!(
             "https://login.microsoftonline.com/{}/oauth2/v2.0/devicecode",
@@ -379,6 +409,7 @@ pub async fn poll_auth_token(device_code: String) -> PollResult {
                 };
             }
             let access = json["access_token"].as_str().unwrap_or("");
+            crate::dbg_log!("device poll: token received, exchanging for minecraft...");
             match exchange_for_minecraft(access).await {
                 Ok(bearer) => PollResult {
                     status: "success".into(),

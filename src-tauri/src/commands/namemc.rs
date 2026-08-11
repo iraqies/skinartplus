@@ -14,14 +14,63 @@ fn curl_path() -> &'static str {
     }
 }
 
+const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+/// True when the response is a Cloudflare interstitial rather than the profile.
+fn is_challenge(html: &str) -> bool {
+    html.contains("Just a moment")
+        || html.contains("cf-chl-")
+        || html.contains("challenge-platform")
+        || html.contains("__cf_chl")
+        || html.contains("Verify you are human")
+        || html.contains("Checking your browser")
+}
+
 /// Fetch the NameMC profile page for an IGN.
 ///
 /// NameMC is behind Cloudflare and blocks programmatic HTTP clients based on
 /// their TLS fingerprint (reqwest gets a 403 "Just a moment..." challenge even
 /// with browser headers). The Windows system curl.exe (built on SChannel)
-/// passes Cloudflare's checks, so we shell out to it instead.
+/// passes Cloudflare's checks, so we shell out to it first. When curl is not
+/// installed (e.g. Linux builds / the Flatpak sandbox) we fall back to reqwest
+/// with full browser headers and one retry.
 async fn fetch_profile_html(ign: &str) -> Result<String, String> {
     let url = format!("https://namemc.com/profile/{}", urlencoding::encode(ign));
+
+    // 1. Try curl with browser-like headers.
+    match curl_fetch(&url).await {
+        Ok(html) if !html.trim().is_empty() => {
+            if is_challenge(&html) {
+                return Err(
+                    "NameMC is showing a Cloudflare challenge. Wait a few seconds and try again."
+                        .into(),
+                );
+            }
+            return Ok(html);
+        }
+        Err(e) if !e.contains("Failed to launch curl") => {
+            return Err(e);
+        }
+        _ => {}
+    }
+
+    // 2. curl is unavailable — fall back to reqwest.
+    match reqwest_fetch(&url).await {
+        Ok(html) if !html.trim().is_empty() => {
+            if is_challenge(&html) {
+                return Err(
+                    "NameMC is showing a Cloudflare challenge. Wait a few seconds and try again."
+                        .into(),
+                );
+            }
+            Ok(html)
+        }
+        Ok(_) => Err("Empty response from NameMC".into()),
+        Err(e) => Err(format!("NameMC fetch failed: {}", e)),
+    }
+}
+
+async fn curl_fetch(url: &str) -> Result<String, String> {
     let output = tokio::process::Command::new(curl_path())
         .arg("-sSL")
         .arg("--compressed")
@@ -30,9 +79,11 @@ async fn fetch_profile_html(ign: &str) -> Result<String, String> {
         .arg("--retry")
         .arg("2")
         .arg("-A")
-        .arg(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        )
+        .arg(BROWSER_UA)
+        .arg("-H")
+        .arg("Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+        .arg("-H")
+        .arg("Accept-Language: en-US,en;q=0.9")
         .arg(&url)
         .output()
         .await
@@ -44,7 +95,34 @@ async fn fetch_profile_html(ign: &str) -> Result<String, String> {
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
-    String::from_utf8(output.stdout).map_err(|e| format!("Bad response from NameMC: {}", e))
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+async fn reqwest_fetch(url: &str) -> Result<String, String> {
+    let client = http_client();
+    let mut last_err: Option<String> = None;
+    for attempt in 1..=2 {
+        let resp = client
+            .get(url)
+            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .header("Accept-Language", "en-US,en;q=0.9")
+            .header("Referer", "https://namemc.com/")
+            .send()
+            .await;
+        match resp {
+            Ok(r) => {
+                if r.status().is_success() {
+                    return r.text().await.map_err(|e| e.to_string());
+                }
+                last_err = Some(format!("HTTP {}", r.status().as_u16()));
+            }
+            Err(e) => last_err = Some(e.to_string()),
+        }
+        if attempt == 1 {
+            tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+        }
+    }
+    Err(last_err.unwrap_or_else(|| "unknown error".into()))
 }
 
 fn extract_hashes(html: &str) -> Vec<String> {
@@ -90,6 +168,7 @@ pub async fn scrape_namemc_skin(ign: String) -> ScrapeSkinResult {
         };
     }
     let active_hash = &hashes[0];
+    crate::dbg_log!("scrape_namemc_skin: {} hashes, active={}", hashes.len(), active_hash);
     let url = format!("https://s.namemc.com/i/{}.png", active_hash);
     match crate::commands::files::download_bytes(&url).await {
         Ok(bytes) => ScrapeSkinResult {
@@ -151,6 +230,7 @@ pub async fn scrape_namemc_all_skins(ign: String) -> ScrapeAllResult {
         };
     }
 
+    crate::dbg_log!("scrape_namemc_all_skins: {} hashes", hashes.len());
     let mut skins = Vec::new();
     for hash in hashes.iter().take(27) {
         let url = format!("https://s.namemc.com/i/{}.png", hash);
@@ -238,6 +318,7 @@ pub async fn upload_one_skin(
     };
 
     let status = resp.status().as_u16();
+    crate::dbg_log!("upload_one_skin: HTTP {}", status);
     if (200..300).contains(&status) {
         return UploadResult {
             success: true,
