@@ -136,5 +136,17 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/**/*
-          generate_release_notes: true
+          name: Fixed a lot of issues
+          body: |
+            ## What was fixed in this release
+
+            **NameMC Claimer (blockmania login)**
+            - Login no longer fails with "The server closed the connection during login on every supported protocol version".
+              - Fixed the 1.19.1/1.19.2 attempt: protocol 760 was being sent over the wire as 761, which the blockmania proxy rejects.
+              - Fixed silent disconnects from rapid back-to-back login attempts (BungeeCord-style connect throttling) by pausing between protocol attempts.
+            - Uses your stored Microsoft account token for the session join, so the claim completes instead of stopping after encryption.
+
+            **Skin upload verification ("Checking session server... (1/60)" stuck)**
+            - Uploaded skins are now verified instantly against the upload API response instead of waiting on Mojang's slow session-server cache.
+            - The session-server poll still runs as a fallback for the rare case the fast check can't confirm.
           update_release_body: true

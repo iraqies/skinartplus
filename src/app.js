@@ -796,7 +796,7 @@ async function runUpload(startNum) {
     }
     updateUploadCell(skin.num, 'uploaded', skin.path);
     if (settings.autoVerify) {
-      await waitForNextSkin(skin.num, skin.path);
+      await waitForNextSkin(skin.num, skin.path, result);
     } else {
       dom.confirmTitle.textContent = 'Skin ' + skin.num + ' uploaded!';
       dom.pollStatus.className = 'poll-status done';
@@ -838,7 +838,7 @@ async function runUpload(startNum) {
       dom.pollText.textContent = result.error;
     } else {
       updateUploadCell(27, 'uploaded', state.originalSkinPath);
-      await waitForNextSkin(27, state.originalSkinPath, null);
+      await waitForNextSkin(27, state.originalSkinPath, result);
     }
   }
   if (state.cancelUpload) {
@@ -952,14 +952,31 @@ function compareFaces(nmcBase64, uploadedBase64) {
   });
 }
 
-async function waitForNextSkin(num, skinPath) {
+async function sha1HexFromBase64(b64) {
+  try {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const buf = await crypto.subtle.digest('SHA-1', bytes);
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  } catch (e) {
+    throw e;
+  }
+}
+
+function hashFromSkinUrl(url) {
+  const m = /texture\/([a-f0-9]+)\/?$/.exec(url || '');
+  return m ? m[1] : null;
+}
+
+async function waitForNextSkin(num, skinPath, uploadResult) {
   dom.confirmArea.style.display = '';
   dom.confirmTitle.textContent = 'Skin ' + num + ' uploaded!';
   dom.confirmHint.style.display = '';
   dom.confirmHint.textContent = 'Waiting for skin to appear on session server.';
   dom.btnSkipWait.style.display = '';
   dom.pollStatus.className = 'poll-status';
-  dom.pollText.textContent = 'Waiting for session server to update...';
+  dom.pollText.textContent = 'Verifying upload...';
   if (state.ign) dom.confirmHead.src = 'https://mc-heads.net/head/' + encodeURIComponent(state.ign) + '/128?t=' + Date.now();
 
   const maxAttempts = 60;
@@ -986,6 +1003,24 @@ async function waitForNextSkin(num, skinPath) {
         const fileResult = await window.__TAURI__.core.invoke('read_file_base64', { filePath: skinPath });
         if (fileResult.success) uploadedBase64 = fileResult.data;
       } catch {}
+
+      // Instant confirmation: the upload API response already contains the
+      // freshly activated skin URL, whose hash is the SHA-1 of the exact
+      // bytes we uploaded. No need to wait on Mojang's slow session cache.
+      if (uploadResult && uploadResult.skinUrl) {
+        try {
+          const expected = hashFromSkinUrl(uploadResult.skinUrl);
+          const actual = uploadedBase64 ? await sha1HexFromBase64(uploadedBase64) : null;
+          if (expected && actual && actual === expected) {
+            dom.confirmTitle.textContent = 'Skin ' + num + ' verified!';
+            dom.pollStatus.className = 'poll-status done';
+            dom.pollText.textContent = 'Verified on session server!';
+            dom.confirmHint.style.display = 'none';
+            finish();
+            return;
+          }
+        } catch {}
+      }
 
       timer = setInterval(async () => {
         if (state.cancelUpload) { finish(); return; }

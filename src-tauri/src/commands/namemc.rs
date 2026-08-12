@@ -294,6 +294,7 @@ pub struct UploadResult {
     pub success: bool,
     pub status_code: Option<u16>,
     pub error: Option<String>,
+    pub skin_url: Option<String>,
 }
 
 #[tauri::command]
@@ -348,16 +349,31 @@ pub async fn upload_one_skin(
     };
 
     let status = resp.status().as_u16();
+    let text = resp.text().await.unwrap_or_default();
     crate::dbg_log!("upload_one_skin: HTTP {}", status);
     if (200..300).contains(&status) {
+        // The upload response is the account profile, which includes the
+        // freshly activated skin URL. This confirms the upload instantly —
+        // no need to poll the (slowly caching) session server.
+        let skin_url = serde_json::from_str::<Value>(&text)
+            .ok()
+            .and_then(|j| {
+                j.get("skins")
+                    .and_then(|s| s.as_array())
+                    .and_then(|arr| {
+                        arr.iter()
+                            .find(|s| s.get("state").and_then(|v| v.as_str()) == Some("ACTIVE"))
+                    })
+                    .and_then(|s| s.get("url").and_then(|u| u.as_str()).map(|u| u.to_string()))
+            });
         return UploadResult {
             success: true,
             status_code: Some(status),
             error: None,
+            skin_url,
         };
     }
 
-    let text = resp.text().await.unwrap_or_default();
     let error = serde_json::from_str::<Value>(&text)
         .ok()
         .and_then(|j| {
@@ -373,6 +389,7 @@ pub async fn upload_one_skin(
         success: false,
         status_code: Some(status),
         error: Some(error),
+        skin_url: None,
     }
 }
 

@@ -208,24 +208,27 @@ pub async fn run_claim(
     let detected = detect_protocol(&cfg.server, cfg.port).await;
     crate::dbg_log!("claim: detected protocol {:?}", detected);
 
-    // 2. try the detected/default version first, then walk backwards through
-    //    the supported range. blockmania, for example, answers status with
-    //    763 but closes the connection on any 761+ login and only accepts
-    //    759/760 — that shows up as a confusing "early EOF" without this.
+    // 2. try the detected/default version first, then the versions most
+    //    proxies actually accept. blockmania answers status with 763 but
+    //    closes the connection on any 761+ login and only accepts 759/760.
+    //
+    //    Note: BungeeCord proxies throttle reconnects from the same IP
+    //    (~4s), so repeated back-to-back attempts all get silently closed.
+    //    A rejected attempt is therefore followed by a pause before the
+    //    next candidate.
     let mut candidates: Vec<i32> = Vec::new();
-    for p in [detected.unwrap_or(763), 763, 762, 761, 760, 759] {
+    for p in [detected.unwrap_or(763), 760, 759, 762, 761] {
         if !candidates.contains(&p) {
             candidates.push(p);
         }
     }
 
     for proto in candidates {
-        let layout = match Layout::for_protocol(proto) {
-            Some(l) => l,
-            None => continue,
-        };
+        if Layout::for_protocol(proto).is_none() {
+            continue;
+        }
         emit(&format!("Connecting as {}...", version_label(proto)));
-        match attempt_login(cfg, layout, cancel.clone(), &emit).await {
+        match attempt_login(cfg, proto, cancel.clone(), &emit).await {
             LoginOutcome::Play(mc, layout) => {
                 crate::dbg_log!("claim: logged in with protocol {}", proto);
                 return run_play(mc, layout, cancel, emit).await;
@@ -234,8 +237,18 @@ pub async fn run_claim(
                 return Err(format!("Disconnected during login: {}", reason));
             }
             LoginOutcome::Rejected => {
-                crate::dbg_log!("claim: protocol {} rejected, trying next", proto);
-                emit("Server closed the connection — trying another protocol version...");
+                crate::dbg_log!("claim: protocol {} rejected, waiting out the connect throttle", proto);
+                emit("Server closed the connection — waiting a few seconds before the next attempt...");
+                // sleep ~6s in 500ms slices so cancel stays responsive
+                for _ in 0..12 {
+                    if cancel.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
+                if cancel.load(Ordering::Relaxed) {
+                    return Err("Cancelled".into());
+                }
             }
             LoginOutcome::Failed(e) => return Err(e),
         }
@@ -246,11 +259,17 @@ pub async fn run_claim(
 
 async fn attempt_login(
     cfg: &ClaimConfig,
-    layout: Layout,
+    proto: i32,
     cancel: Arc<AtomicBool>,
     emit: &impl Fn(&str),
 ) -> LoginOutcome {
-    let proto = layout.protocol();
+    // Packet layout is shared by 760/761, but the handshake protocol number
+    // must be the exact version we're negotiating (a 760 login must declare
+    // 760 on the wire, not 761).
+    let layout = match Layout::for_protocol(proto) {
+        Some(l) => l,
+        None => return LoginOutcome::Failed(format!("Unsupported protocol {}", proto)),
+    };
     let stream = match TcpStream::connect((cfg.server.as_str(), cfg.port)).await {
         Ok(s) => s,
         Err(e) => {

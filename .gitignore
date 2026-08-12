@@ -2,6 +2,7 @@
 /target
 src-tauri/target
 src-tauri/target2
+src-tauri/target-fresh
 
 # Node
 node_modules
