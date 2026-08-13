@@ -96,7 +96,9 @@ jobs:
           DEB="skinartplus_${VERSION}_${ARCH}.deb"
           echo "Deb name: $DEB"
           mkdir -p src-tauri/target/release/bundle/deb
-          cp artifacts/deb/*.deb "src-tauri/target/release/bundle/deb/$DEB"
+          DEB_SRC=$(find artifacts -name '*.deb' -print -quit)
+          echo "Found deb: $DEB_SRC"
+          cp "$DEB_SRC" "src-tauri/target/release/bundle/deb/$DEB"
           sed -i "s|path: ../../src-tauri/target/release/bundle/deb/[^ ]*|path: ../../src-tauri/target/release/bundle/deb/$DEB|" packaging/flatpak/com.skinartplus.app.yml
           grep 'deb/' packaging/flatpak/com.skinartplus.app.yml
 
