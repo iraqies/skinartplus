@@ -703,9 +703,11 @@ dom.ddLogout.addEventListener('click', () => {
 async function uploadWithRetry(skin, maxRetries) {
   maxRetries = maxRetries || 3;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    if (state.cancelUpload) return { success: false, cancelled: true, error: 'Upload cancelled' };
     const result = await window.__TAURI__.core.invoke('upload_one_skin', {
       bearerToken: state.bearerToken, skinPath: skin.path, variant: skin.variant || 'classic'
     });
+    if (result.cancelled) return result;
     if (result.success) return result;
     if (result.statusCode === 401) {
       let rt = state.refreshToken;
@@ -787,6 +789,10 @@ async function runUpload(startNum) {
     dom.pollText.textContent = 'Uploading to Minecraft session server...';
     dom.btnSkipWait.style.display = 'none';
     const result = await uploadWithRetry(skin);
+    if (result.cancelled) {
+      markRemainingSkipped();
+      break;
+    }
     if (!result.success) {
       updateUploadCell(skin.num, 'error');
       dom.confirmTitle.textContent = 'Skin ' + skin.num + ' failed!';
@@ -796,7 +802,7 @@ async function runUpload(startNum) {
     }
     updateUploadCell(skin.num, 'uploaded', skin.path);
     if (settings.autoVerify) {
-      await waitForNextSkin(skin.num, skin.path, result);
+      await waitForNextSkin(skin.num, skin.path);
     } else {
       dom.confirmTitle.textContent = 'Skin ' + skin.num + ' uploaded!';
       dom.pollStatus.className = 'poll-status done';
@@ -831,14 +837,16 @@ async function runUpload(startNum) {
     dom.pollText.textContent = 'Uploading to Minecraft session server...';
     dom.btnSkipWait.style.display = 'none';
     const result = await uploadWithRetry({ path: state.originalSkinPath, num: 27, variant: state.skinModel });
-    if (!result.success) {
+    if (result.cancelled) {
+      markRemainingSkipped();
+    } else if (!result.success) {
       updateUploadCell(27, 'error');
       dom.confirmTitle.textContent = 'Skin 27 (original) failed!';
       dom.pollStatus.className = 'poll-status err';
       dom.pollText.textContent = result.error;
     } else {
       updateUploadCell(27, 'uploaded', state.originalSkinPath);
-      await waitForNextSkin(27, state.originalSkinPath, result);
+      await waitForNextSkin(27, state.originalSkinPath);
     }
   }
   if (state.cancelUpload) {
@@ -881,6 +889,7 @@ dom.btnCancelUpload.addEventListener('click', () => {
   state.cancelUpload = true;
   dom.btnCancelUpload.disabled = true;
   dom.btnCancelUpload.textContent = 'Cancelling...';
+  window.__TAURI__.core.invoke('cancel_upload').catch(() => {});
 });
 
 function delayOrCancel(ms) {
@@ -911,81 +920,67 @@ function highlightGridCell(num) {
   if (cell) cell.classList.add('active-cell');
 }
 
-function compareFaces(nmcBase64, uploadedBase64) {
+// Compare two skins by DECODED pixels. Mojang re-encodes uploaded PNGs
+// (lossless — same pixels, different bytes), so byte hashes never match.
+// Exact RGBA equality across all 4096 pixels is what "the same skin" means:
+// re-encoding still matches, but a different (even adjacent) tile does not.
+// Resolves to the number of differing pixels, or -1 if an image fails to load.
+function compareSkinsExact(aBase64, bBase64) {
   const SIZE = 64;
   return new Promise((resolve) => {
-    const nmImg = new Image();
-    nmImg.onload = () => {
-      const upImg = new Image();
-      upImg.onload = () => {
-        const nmCanvas = document.createElement('canvas');
-        nmCanvas.width = SIZE; nmCanvas.height = SIZE;
-        const nmCtx = nmCanvas.getContext('2d');
-        nmCtx.imageSmoothingEnabled = false;
-        nmCtx.drawImage(nmImg, 0, 0, SIZE, SIZE);
-        const nmData = nmCtx.getImageData(0, 0, SIZE, SIZE).data;
+    const aImg = new Image();
+    aImg.onload = () => {
+      const bImg = new Image();
+      bImg.onload = () => {
+        const aCanvas = document.createElement('canvas');
+        aCanvas.width = SIZE; aCanvas.height = SIZE;
+        const aCtx = aCanvas.getContext('2d');
+        aCtx.imageSmoothingEnabled = false;
+        aCtx.drawImage(aImg, 0, 0, SIZE, SIZE);
+        const aData = aCtx.getImageData(0, 0, SIZE, SIZE).data;
 
-        const upCanvas = document.createElement('canvas');
-        upCanvas.width = SIZE; upCanvas.height = SIZE;
-        const upCtx = upCanvas.getContext('2d');
-        upCtx.imageSmoothingEnabled = false;
-        upCtx.drawImage(upImg, 0, 0, SIZE, SIZE);
-        const upData = upCtx.getImageData(0, 0, SIZE, SIZE).data;
+        const bCanvas = document.createElement('canvas');
+        bCanvas.width = SIZE; bCanvas.height = SIZE;
+        const bCtx = bCanvas.getContext('2d');
+        bCtx.imageSmoothingEnabled = false;
+        bCtx.drawImage(bImg, 0, 0, SIZE, SIZE);
+        const bData = bCtx.getImageData(0, 0, SIZE, SIZE).data;
 
-        let matching = 0, compared = 0;
-        for (let i = 0; i < nmData.length; i += 4) {
-          if (nmData[i + 3] > 10 || upData[i + 3] > 10) {
-            compared++;
-            const dr = Math.abs(nmData[i] - upData[i]);
-            const dg = Math.abs(nmData[i + 1] - upData[i + 1]);
-            const db = Math.abs(nmData[i + 2] - upData[i + 2]);
-            if (dr < 30 && dg < 30 && db < 30) matching++;
+        let diff = 0;
+        for (let i = 0; i < aData.length; i += 4) {
+          if (aData[i] !== bData[i] || aData[i + 1] !== bData[i + 1] ||
+              aData[i + 2] !== bData[i + 2] || aData[i + 3] !== bData[i + 3]) {
+            diff++;
           }
         }
-        resolve(compared > 0 ? matching / compared : 0);
+        resolve(diff);
       };
-      upImg.onerror = () => resolve(0);
-      upImg.src = 'data:image/png;base64,' + uploadedBase64;
+      bImg.onerror = () => resolve(-1);
+      bImg.src = 'data:image/png;base64,' + bBase64;
     };
-    nmImg.onerror = () => resolve(0);
-    nmImg.src = 'data:image/png;base64,' + nmcBase64;
+    aImg.onerror = () => resolve(-1);
+    aImg.src = 'data:image/png;base64,' + aBase64;
   });
 }
 
-async function sha1HexFromBase64(b64) {
-  try {
-    const bin = atob(b64);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const buf = await crypto.subtle.digest('SHA-1', bytes);
-    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-  } catch (e) {
-    throw e;
-  }
-}
-
-function hashFromSkinUrl(url) {
-  const m = /texture\/([a-f0-9]+)\/?$/.exec(url || '');
-  return m ? m[1] : null;
-}
-
-async function waitForNextSkin(num, skinPath, uploadResult) {
+async function waitForNextSkin(num, skinPath) {
   dom.confirmArea.style.display = '';
   dom.confirmTitle.textContent = 'Skin ' + num + ' uploaded!';
   dom.confirmHint.style.display = '';
-  dom.confirmHint.textContent = 'Waiting for skin to appear on session server.';
+  dom.confirmHint.textContent = 'Waiting for skin to appear on NameMC.';
   dom.btnSkipWait.style.display = '';
   dom.pollStatus.className = 'poll-status';
   dom.pollText.textContent = 'Verifying upload...';
   if (state.ign) dom.confirmHead.src = 'https://mc-heads.net/head/' + encodeURIComponent(state.ign) + '/128?t=' + Date.now();
 
-  const maxAttempts = 60;
+  const maxAttempts = 90;
   const interval = 2000;
 
   return new Promise((resolve) => {
     let resolved = false;
     let attempts = 0;
     let timer = null;
+    let uploadedBase64 = null;
 
     function finish() {
       if (resolved) return;
@@ -998,60 +993,38 @@ async function waitForNextSkin(num, skinPath, uploadResult) {
     dom.btnSkipWait.onclick = () => finish();
 
     setTimeout(async () => {
-      let uploadedBase64 = null;
       try {
         const fileResult = await window.__TAURI__.core.invoke('read_file_base64', { filePath: skinPath });
         if (fileResult.success) uploadedBase64 = fileResult.data;
       } catch {}
-
-      // Instant confirmation: the upload API response already contains the
-      // freshly activated skin URL, whose hash is the SHA-1 of the exact
-      // bytes we uploaded. No need to wait on Mojang's slow session cache.
-      if (uploadResult && uploadResult.skinUrl) {
-        try {
-          const expected = hashFromSkinUrl(uploadResult.skinUrl);
-          const actual = uploadedBase64 ? await sha1HexFromBase64(uploadedBase64) : null;
-          if (expected && actual && actual === expected) {
-            dom.confirmTitle.textContent = 'Skin ' + num + ' verified!';
-            dom.pollStatus.className = 'poll-status done';
-            dom.pollText.textContent = 'Verified on session server!';
-            dom.confirmHint.style.display = 'none';
-            finish();
-            return;
-          }
-        } catch {}
-      }
+      if (state.cancelUpload) { finish(); return; }
+      if (!uploadedBase64) { finish(); return; }
 
       timer = setInterval(async () => {
         if (state.cancelUpload) { finish(); return; }
         attempts++;
         dom.pollStatus.className = 'poll-status';
-        dom.pollText.textContent = 'Checking session server... (' + attempts + '/' + maxAttempts + ')';
+        dom.pollText.textContent = 'Checking NameMC... (' + attempts + '/' + maxAttempts + ')';
 
         try {
-          let skinBase64 = null;
-          if (state.uuid) {
-            const res = await window.__TAURI__.core.invoke('download_skin_texture', { uuid: state.uuid });
-            if (resolved) return;
-            if (res.success && res.data) skinBase64 = res.data;
-            else if (res.error) dom.pollText.textContent = 'Session server: ' + res.error;
+          const nmResult = await window.__TAURI__.core.invoke('scrape_namemc_skin', { ign: state.ign });
+          if (resolved) return;
+          if (!(nmResult.success && nmResult.skinDataBase64)) {
+            dom.pollText.textContent = 'NameMC: ' + (nmResult.error || 'no skin data');
+            return;
           }
-          if (!skinBase64 && state.ign) {
-            const nmResult = await window.__TAURI__.core.invoke('scrape_namemc_skin', { ign: state.ign });
-            if (resolved) return;
-            if (nmResult.success && nmResult.skinDataBase64) skinBase64 = nmResult.skinDataBase64;
-            else if (nmResult.error) dom.pollText.textContent = 'NameMC: ' + nmResult.error;
-          }
-          if (skinBase64 && uploadedBase64) {
-            const ratio = await compareFaces(skinBase64, uploadedBase64);
-            if (ratio >= 1.0) {
-              dom.confirmTitle.textContent = 'Skin ' + num + ' verified!';
-              dom.pollStatus.className = 'poll-status done';
-              dom.pollText.textContent = 'Verified on session server!';
-              dom.confirmHint.style.display = 'none';
-              finish();
-              return;
-            }
+          const skinBase64 = nmResult.skinDataBase64;
+          const diff = await compareSkinsExact(skinBase64, uploadedBase64);
+          if (resolved) return;
+          if (diff === 0) {
+            dom.confirmTitle.textContent = 'Skin ' + num + ' verified!';
+            dom.pollStatus.className = 'poll-status done';
+            dom.pollText.textContent = 'Verified on NameMC!';
+            dom.confirmHint.style.display = 'none';
+            finish();
+            return;
+          } else if (diff > 0) {
+            dom.pollText.textContent = 'Checking... (' + attempts + '/' + maxAttempts + ') — ' + diff + ' px differ';
           }
         } catch (e) {
           dom.pollText.textContent = 'Check failed: ' + e.message;
@@ -1324,7 +1297,30 @@ async function setVersionInfo() {
 
 // ── Update Check ─────────────────────────────────────────────────
 
+let pendingUpdate = null;
+
 async function checkForUpdates() {
+  try {
+    const platform = await window.__TAURI__.core.invoke('get_os_platform');
+    const updater = window.__TAURI__ && window.__TAURI__.updater;
+    if (!updater || platform === 'linux') {
+      legacyCheckForUpdates();
+      return;
+    }
+    const update = await updater.check();
+    if (!update) return;
+    pendingUpdate = update;
+    const banner = document.getElementById('update-banner');
+    const text = document.getElementById('update-banner-text');
+    if (!banner || !text) return;
+    text.textContent = 'A new version (v' + update.version + ') is available. You are on v' + update.currentVersion + '.';
+    banner.style.display = 'flex';
+  } catch (e) {
+    console.warn('Update check failed:', e);
+  }
+}
+
+async function legacyCheckForUpdates() {
   try {
     const info = await window.__TAURI__.core.invoke('check_for_update');
     if (!info || !info.is_outdated) return;
@@ -1344,13 +1340,19 @@ async function checkForUpdates() {
   if (downloadBtn) {
     downloadBtn.addEventListener('click', async () => {
       try {
+        const updater = window.__TAURI__ && window.__TAURI__.updater;
         const platform = await window.__TAURI__.core.invoke('get_os_platform');
-        if (platform === 'windows') {
+        if (updater && platform === 'windows' && pendingUpdate) {
           downloadBtn.textContent = 'Downloading...';
           downloadBtn.disabled = true;
-          const dl = await window.__TAURI__.core.invoke('download_update');
-          downloadBtn.textContent = 'Installing...';
-          await window.__TAURI__.core.invoke('run_update_installer', { path: dl.path });
+          await pendingUpdate.downloadAndInstall();
+          // On success the installer closes and relaunches the app.
+          downloadBtn.textContent = 'Updated! Restarting...';
+        } else if (updater && pendingUpdate) {
+          downloadBtn.textContent = 'Downloading...';
+          downloadBtn.disabled = true;
+          await pendingUpdate.downloadAndInstall();
+          downloadBtn.textContent = 'Updated!';
         } else {
           await window.__TAURI__.core.invoke('open_latest_release');
         }

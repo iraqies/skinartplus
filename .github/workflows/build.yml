@@ -26,7 +26,11 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf cmake libclang-dev
+
+      - name: Install Windows build dependencies (LLVM for btls-sys)
+        if: matrix.platform == 'windows-latest'
+        run: choco install llvm --no-progress -y
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -51,8 +55,11 @@ jobs:
           SKINARTPLUS_CLIENT_ID: ${{ secrets.SKINARTPLUS_CLIENT_ID }}
           SKINARTPLUS_CLIENT_SECRET: ${{ secrets.SKINARTPLUS_CLIENT_SECRET }}
           SKINARTPLUS_MS_AUTHORITY: ${{ secrets.SKINARTPLUS_MS_AUTHORITY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           args: ${{ matrix.args }}
+          includeUpdaterJson: true
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -63,6 +70,8 @@ jobs:
             src-tauri/target/release/bundle/rpm/*.rpm
             src-tauri/target/release/bundle/appimage/*.AppImage
             src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/nsis/*.sig
+            src-tauri/target/release/latest.json
 
   flatpak:
     runs-on: ubuntu-22.04
@@ -136,9 +145,19 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/**/*
-          name: Fixed a lot of issues
+          name: Fixed upload, namemc claimer and skinart stealer
           body: |
-            ## What was fixed in this release
+            ## Fixed upload, NameMC claimer and Skinart stealer
+
+            **Skin upload + verification now actually works**
+            - Uploaded skins are verified against **NameMC**: the checker re-reads the NameMC profile and compares every pixel (RGBA) of the current active skin against the file you uploaded. "Verified" is only shown when NameMC actually reflects the tile.
+            - Fixed the wrong-hash comparison (the old code compared SHA-1 where Mojang's skin URL is really the SHA-256 of the PNG) and removed the unreliable tolerance-based session-server check.
+            - "Cancel Upload" now truly aborts the in-flight upload instead of just waiting for it to finish.
+
+            **Skinart Stealer (NameMC scraping) now works**
+            - Rewrote the NameMC scraper around a real `wreq` client that emulates a browser (UA rotation across Chrome/Safari/Edge/Firefox) and resolves canonical profile redirects, so the scraper is no longer blocked by NameMC's bot check.
+            - Downloads up to 27 skins in parallel and renders each face as a native 8x8 preview.
+            - New "All skins" mode scrapes the full skin list instead of just the active skin.
 
             **NameMC Claimer (blockmania login)**
             - Login no longer fails with "The server closed the connection during login on every supported protocol version".
@@ -146,7 +165,7 @@ jobs:
               - Fixed silent disconnects from rapid back-to-back login attempts (BungeeCord-style connect throttling) by pausing between protocol attempts.
             - Uses your stored Microsoft account token for the session join, so the claim completes instead of stopping after encryption.
 
-            **Skin upload verification ("Checking session server... (1/60)" stuck)**
-            - Uploaded skins are now verified instantly against the upload API response instead of waiting on Mojang's slow session-server cache.
-            - The session-server poll still runs as a fallback for the rare case the fast check can't confirm.
+            **UI / packaging**
+            - Default window is 1100px wide.
+            - Added the Tauri updater plugin — new versions install themselves in the background and the app reopens, no more uninstall/reinstall.
           update_release_body: true

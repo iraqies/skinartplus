@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "namemc-scrape",
+  "description": "Hidden WebView2 window used to scrape NameMC profile pages",
+  "windows": ["namemc-scrape"],
+  "remote": {
+    "urls": ["https://namemc.com", "https://s.namemc.com"]
+  },
+  "permissions": ["core:event:default"]
+}

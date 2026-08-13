@@ -1,10 +1,10 @@
 [package]
 name = "skinartplus"
-version = "1.0.4"
+version = "1.0.5"
 description = "Skinart+ - NameMC skin art tool"
 authors = ["Iraqies"]
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.85"
 
 [lib]
 name = "skinartplus_lib"
@@ -21,6 +21,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
@@ -40,3 +41,5 @@ urlencoding = "2"
 sha2 = "0.10"
 machine-uid = "0.5"
 qrcode = "0.14"
+wreq = { version = "6.0.0-rc", features = ["gzip", "deflate", "brotli"] }
+wreq-util = "3.0.0-rc"

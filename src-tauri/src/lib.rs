@@ -19,7 +19,9 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(commands::claim::ClaimState::default())
+        .manage(commands::namemc::UploadState::default())
         .invoke_handler(tauri::generate_handler![
             commands::files::select_image,
             commands::files::select_base_skin,
@@ -44,6 +46,7 @@ pub fn run() {
             commands::namemc::scrape_namemc_skin,
             commands::namemc::scrape_namemc_all_skins,
             commands::namemc::upload_one_skin,
+            commands::namemc::cancel_upload,
             commands::templates::load_templates,
             commands::templates::get_template_image_path,
             commands::templates::get_template_image_data,
