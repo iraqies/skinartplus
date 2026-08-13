@@ -17,7 +17,7 @@
 
 </div>
 
-Skinart+ is a desktop app that converts images into 64×64 Minecraft skinart. It supports NameMC account integration, batch generation across every layer combination, template base skinarts — all wrapped in a fast Tauri (Rust + WebView) shell.
+Skinart+ is a desktop app that converts images into 64×64 Minecraft skinart. It supports NameMC account integration, batch generation across every layer combination, template base skinarts, all wrapped in a fast Tauri (Rust + WebView) shell.
 
 ---
 
@@ -25,9 +25,9 @@ Skinart+ is a desktop app that converts images into 64×64 Minecraft skinart. It
 
 - **Image → skinart conversion**: pick any image and get a ready-to-use Minecraft skinart
 - **NameMC integration**: log in, preview your avatar, and upload skinarts with one click
-- **Batch generation**: generate every possible art layer combination automatically
+- **NameMC claimer**: claim the namemc profile for the account you logged in with
 - **Template library**: hundreds of bundled base skinarts to build from
-- **Fast & light**: built with Tauri, so it uses a fraction of the memory of Electron apps
+- **Skinart Stealer**: you can take anyone's skinart and use it for yourself!
 
 ---
 
@@ -37,9 +37,7 @@ Grab the latest from the [Releases page](https://github.com/iraqies/skinartplus/
 
 ### Windows
 
-```
-SkinartPlus_1.0.0_x64-setup.exe
-```
+[Download SkinartPlus_x64-setup.exe](https://github.com/iraqies/skinartplus/releases/latest)
 
 Run the installer. no extra dependencies needed. It installs per-user, so no admin rights are required.
 
