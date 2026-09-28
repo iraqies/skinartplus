@@ -4,7 +4,7 @@
 
 # Skinart+
 
-**Turn pixel art into Minecraft skinarts and upload them straight to NameMC**
+Convert pixel art into Minecraft skinart and upload it to NameMC.
 
 [![GitHub release](https://img.shields.io/github/v/release/iraqies/skinartplus?color=14b8a6&label=release)](https://github.com/iraqies/skinartplus/releases)
 [![Stars](https://img.shields.io/github/stars/iraqies/skinartplus?color=14b8a6)](https://github.com/iraqies/skinartplus/stargazers)
@@ -17,82 +17,75 @@
 
 </div>
 
-Skinart+ is a desktop app that converts images into 64×64 Minecraft skinart. It supports NameMC account integration, batch generation across every layer combination, template base skinarts, all wrapped in a fast Tauri (Rust + WebView) shell.
-
----
+Skinart+ is a desktop app for converting images into 64×64 Minecraft skinart. You can generate every layer combination, start with a bundled template, and upload skins through your NameMC account. It runs on Tauri, using Rust and a WebView.
 
 ## Features
 
-- **Image → skinart conversion**: pick any image and get a ready-to-use Minecraft skinart
-- **NameMC integration**: log in, preview your avatar, and upload skinarts with one click
-- **NameMC claimer**: claim the namemc profile for the account you logged in with
-- **Template library**: hundreds of bundled base skinarts to build from
-- **Skinart Stealer**: you can take anyone's skinart and use it for yourself!
-
----
+- Convert images into Minecraft skinart.
+- Sign in to NameMC, preview your avatar, and upload skins.
+- Claim the NameMC profile associated with your signed-in account.
+- Start with one of hundreds of bundled base skinarts.
+- Copy another user's skinart with Skinart Stealer.
 
 ## Install
 
-Grab the latest from the [Releases page](https://github.com/iraqies/skinartplus/releases).
+Get the latest build from [Releases](https://github.com/iraqies/skinartplus/releases).
 
 ### Windows
 
-[Download SkinartPlus_x64-setup.exe](https://github.com/iraqies/skinartplus/releases/latest)
+[Download the Windows installer](https://github.com/iraqies/skinartplus/releases/latest).
 
-Run the installer. no extra dependencies needed. It installs per-user, so no admin rights are required.
+Run the installer. It installs for your user account, needs no administrator rights, and requires no extra dependencies.
 
 ### Linux
 
-pick the package that matches your distro:
+Choose a package for your distribution.
 
 | Distro family | Format | Install |
 |---------------|--------|---------|
-| **Any distro** | Flatpak | `flatpak install SkinartPlus.flatpak` then `flatpak run com.skinartplus.app` |
-| **Any distro** | AppImage | `chmod +x skinartplus_1.0.0_amd64.AppImage && ./skinartplus_1.0.0_amd64.AppImage` |
-| **Debian / Ubuntu / Linux Mint / Pop!_OS** | `.deb` | `sudo dpkg -i skinartplus_1.0.0_amd64.deb` |
-| **Fedora / RHEL / CentOS / openSUSE** | `.rpm` | `sudo rpm -i skinartplus-1.0.0-1.x86_64.rpm` |
-| **Arch / Manjaro / EndeavourOS** | Flatpak or AppImage | `flatpak install SkinartPlus.flatpak` or run the AppImage directly |
-| **Any rolling / source-based distro** | Flatpak or AppImage | works without touching the system package manager |
+| Any distro | Flatpak | `flatpak install SkinartPlus.flatpak` then `flatpak run com.skinartplus.app` |
+| Any distro | AppImage | `chmod +x skinartplus_1.0.0_amd64.AppImage && ./skinartplus_1.0.0_amd64.AppImage` |
+| Debian / Ubuntu / Linux Mint / Pop!_OS | `.deb` | `sudo dpkg -i skinartplus_1.0.0_amd64.deb` |
+| Fedora / RHEL / CentOS / openSUSE | `.rpm` | `sudo rpm -i skinartplus-1.0.0-1.x86_64.rpm` |
+| Arch / Manjaro / EndeavourOS | Flatpak or AppImage | `flatpak install SkinartPlus.flatpak` or run the AppImage directly |
+| Other rolling or source-based distros | Flatpak or AppImage | No system package manager install needed |
 
-> The **Flatpak** and **AppImage** builds run on any modern Linux distribution (x86_64) without system package installs — use these if your distro isn't listed above.
+The Flatpak and AppImage builds support modern x86_64 Linux distributions. Use either if there is no native package for your distro.
 
-**Notes**
+If `dpkg -i` reports missing dependencies, run `sudo apt-get install -f`.
 
-- If `dpkg -i` fails on dependency errors (older Ubuntu/Debian), run `sudo apt-get install -f` afterwards to resolve them.
-- If the AppImage needs a newer FUSE, either install `libfuse2` (`sudo apt install libfuse2`) or run it with `./skinartplus_1.0.0_amd64.AppImage --appimage-extract-and-run`.
-
----
+If the AppImage cannot find FUSE, install `libfuse2` with `sudo apt install libfuse2`, or run it with `./skinartplus_1.0.0_amd64.AppImage --appimage-extract-and-run`.
 
 ## Build from source
 
 ### Requirements
 
-- [Rust](https://rustup.rs) (stable)
+- [Rust](https://rustup.rs), stable
 - [Node.js](https://nodejs.org) LTS and npm
-- Platform system dependencies (below)
+- The system packages for your platform, listed below
 
 ### Linux system dependencies
 
-**Debian / Ubuntu / Mint:**
+**Debian / Ubuntu / Mint**
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf build-essential
 ```
 
-**Fedora / RHEL:**
+**Fedora / RHEL**
 
 ```bash
 sudo dnf install -y webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel patchelf gcc
 ```
 
-**Arch / Manjaro:**
+**Arch / Manjaro**
 
 ```bash
 sudo pacman -S --needed webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf base-devel
 ```
 
-**openSUSE:**
+**openSUSE**
 
 ```bash
 sudo zypper install -y webkit2gtk3-soup2-devel libappindicator3-devel librsvg2-devel patchelf gcc
@@ -101,44 +94,29 @@ sudo zypper install -y webkit2gtk3-soup2-devel libappindicator3-devel librsvg2-d
 ### Build
 
 ```bash
-# install dependencies
 npm install
-
-# development (runs a live dev window)
 npm run tauri dev
-
-# production build (bundles for your current OS)
 npm run tauri build
 ```
 
-`npm run tauri build` outputs the installers for your current OS (e.g. `.exe` on Windows, `.deb`/`.rpm`/`.AppImage` on Linux) into `src-tauri/target/release/bundle/`.
+`npm run tauri dev` opens a development window. `npm run tauri build` creates packages for your current OS in `src-tauri/target/release/bundle/`.
 
-> Note: some auth features require client credentials that are injected at build time. A permissive public fallback is baked into the source, so the app builds and runs out of the box — but for the full sign-in experience the official releases are built with the private client IDs.
-
----
+Some authentication features require client credentials supplied at build time. The source includes a public fallback, so you can build and run the app without private credentials. Official releases include the private client IDs needed for the full sign-in experience.
 
 ## Packaging
 
-This repository includes a [GitHub Actions workflow](.github/workflows/build.yml) that builds on every push and tag:
+The [GitHub Actions workflow](.github/workflows/build.yml) builds on pushes and tags. It produces a Windows NSIS installer, Linux `.deb`, `.rpm`, and `.AppImage` packages, and a Flatpak bundle in `packaging/flatpak/`.
 
-- Windows NSIS installer (`.exe`)
-- Linux `.deb`, `.rpm`, and `.AppImage`
-- A universal **Flatpak** bundle (`packaging/flatpak/`)
+Tag a commit, for example `v1.0.1`, to have the workflow attach installers to a GitHub Release.
 
-Tag a commit (`v1.0.1`, `v1.1.0`, …) and the workflow will attach all installers to a GitHub Release automatically.
+## Credits
 
----
+- Iraqies, founder and developer
+- GoldenGR, authentication provider
+- Hyloduck, logo design
 
-## 💚 Credits
+## License
 
-- **Iraqies** — founder & developer
-- **GoldenGR** — auth provider
-- **Hyloduck** — logo design
+Licensed under [Creative Commons Attribution 4.0 International (CC BY 4.0)](LICENSE).
 
----
-
-## 📄 License
-
-Licensed under the [Creative Commons Attribution 4.0 International (CC BY 4.0)](LICENSE).
-
-You are free to **fork, modify, and redistribute** this project — but you **must give credit** to the original author (iraqies / Skinart+) and link back to the original project. The "Skinart+" name and logo are not covered by this license.
+You may fork, modify, and redistribute the project as long as you credit iraqies / Skinart+ and link to the original project. The Skinart+ name and logo are not covered by this license.
