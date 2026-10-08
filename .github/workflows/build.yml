@@ -147,8 +147,20 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/**/*
-          name: Fixed upload, namemc claimer and skinart stealer
+          name: 6 new skinart templates
           body: |
+            ## 6 new skinart templates
+
+            Added to the bundled template library, with credit to each artist:
+            - **turtilo** by MinecraftSuchter
+            - **CaveBob** by Naamlooyz
+            - **Katze** by LimonrstX
+            - **Nostalgia** by webnccb
+            - **Eostrogen Bomb** by Yoonie
+            - **warden** by jakeayyy
+
+            Also introduces a new `LGBTQ+` tag in the template filter.
+
             ## Fixed upload, NameMC claimer and Skinart stealer
 
             **Skin upload + verification now actually works**

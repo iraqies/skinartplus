@@ -1276,6 +1276,78 @@
         "nature",
         "landscape"
       ]
+    },
+    {
+      "id": "0000108",
+      "name": "turtilo",
+      "filename": "images/turtilo.png",
+      "date": "2026-10-8",
+      "uploader": "MinecraftSuchter",
+      "uuid": "5628ce8d-7708-4ad8-a2bd-7871db172e1a",
+      "tags": [
+        "cute",
+        "other"
+      ]
+    },
+    {
+      "id": "0000109",
+      "name": "CaveBob",
+      "filename": "images/cave_bob.png",
+      "date": "2026-10-8",
+      "uploader": "Naamlooyz",
+      "uuid": "4479cc44-2b5a-4170-987e-8d6f9a44ee59",
+      "tags": [
+        "meme",
+        "other",
+        "character"
+      ]
+    },
+    {
+      "id": "0000110",
+      "name": "Katze",
+      "filename": "images/katze.png",
+      "date": "2026-10-8",
+      "uploader": "LimonrstX",
+      "uuid": "1d6bcf2e-eb82-4ccd-a4a5-d7241d8292af",
+      "tags": [
+        "cute"
+      ]
+    },
+    {
+      "id": "0000111",
+      "name": "Nostalgia",
+      "filename": "images/nostalgia.png",
+      "date": "2026-10-8",
+      "uploader": "webnccb",
+      "uuid": "52b11946-a0ab-45e4-a1d6-f6e050e7da44",
+      "tags": [
+        "landscape",
+        "aesthetic"
+      ]
+    },
+    {
+      "id": "0000112",
+      "name": "Eostrogen Bomb",
+      "filename": "images/eostrogen_bomb.png",
+      "date": "2026-10-8",
+      "uploader": "Yoonie",
+      "uuid": "f9473603-1575-4048-80f3-581792e1229e",
+      "tags": [
+        "LGBTQ+"
+      ]
+    },
+    {
+      "id": "0000113",
+      "name": "warden",
+      "filename": "images/warden.png",
+      "date": "2026-10-8",
+      "uploader": "jakeayyy",
+      "uuid": "a71705c8-75b4-4b33-907c-bc733b747aed",
+      "tags": [
+        "moody",
+        "cape",
+        "dark"
+      ]
     }
   ]
 }
