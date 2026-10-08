@@ -128,32 +128,41 @@ jobs:
           path: artifacts/
           merge-multiple: true
 
-      - name: Preserve updater manifest from existing release
+      - name: Generate updater manifest
         run: |
           set -euo pipefail
-          # tauri-action uploads latest.json straight to the release instead of
-          # leaving it in the build artifacts. Capture it before the delete below
-          # and re-attach it afterwards, otherwise the Tauri updater endpoint
-          # 404s and auto-update silently stops working for Windows users.
-          MANIFEST_URL=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ github.ref_name }}" \
-            | python3 -c "import sys,json; d=json.load(sys.stdin); print(next((a['browser_download_url'] for a in d.get('assets',[]) if a['name']=='latest.json'),''))" || true)
-          if [ -n "$MANIFEST_URL" ]; then
-            curl -sL -o artifacts/latest.json "$MANIFEST_URL"
-            if [ -s artifacts/latest.json ] && grep -q '"platforms"' artifacts/latest.json; then
-              echo "Captured latest.json ($(wc -c < artifacts/latest.json) bytes)"
-            else
-              rm -f artifacts/latest.json
-              echo "Downloaded latest.json was not a valid updater manifest"
-            fi
-          else
-            echo "No latest.json on the existing release"
+          # tauri-action uploads latest.json straight to the Release, but the
+          # delete step below discards that Release, so the manifest never
+          # survives and releases/latest/download/latest.json 404s. Build the
+          # manifest here from the NSIS signature in the artifacts instead, so
+          # it is carried into the recreated Release by files: artifacts/**/*.
+          VERSION="${GITHUB_REF_NAME}"
+          EXE=$(find artifacts -name '*_x64-setup.exe' -print -quit)
+          if [ -z "$EXE" ] || [ ! -f "${EXE}.sig" ]; then
+            echo "::warning::NSIS installer or .sig missing - releasing without latest.json"
+            exit 0
           fi
-          if [ -f artifacts/latest.json ]; then
-            echo "Updater manifest will be re-attached to the new release"
-          else
-            echo "WARNING: release will be published without latest.json; Windows auto-update will not detect it"
-          fi
+          ASSET=$(basename "$EXE")
+          URL="https://github.com/${{ github.repository }}/releases/download/${VERSION}/${ASSET}"
+          python3 - "$VERSION" "${EXE}.sig" "$URL" > artifacts/latest.json <<'PY'
+          import datetime, json, sys
+          version, sig_path, url = sys.argv[1:4]
+          with open(sig_path, encoding="utf-8") as fh:
+              signature = fh.read().strip()
+          manifest = {
+              "version": version,
+              "notes": "Skinart+ " + version,
+              "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "platforms": {
+                  "windows-x86_64": {"signature": signature, "url": url}
+              },
+          }
+          json.dump(manifest, sys.stdout, indent=2)
+          print()
+          PY
+          echo "Updater manifest generated for ${VERSION}"
+          echo "  installer: ${ASSET}"
+          echo "  url:       ${URL}"
 
       - name: Delete existing release for tag (start fresh)
         run: |
@@ -209,4 +218,3 @@ jobs:
             **UI / packaging**
             - Default window is 1100px wide.
             - Added the Tauri updater plugin — new versions install themselves in the background and the app reopens, no more uninstall/reinstall.
-          update_release_body: true
