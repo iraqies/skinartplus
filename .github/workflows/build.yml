@@ -128,6 +128,33 @@ jobs:
           path: artifacts/
           merge-multiple: true
 
+      - name: Preserve updater manifest from existing release
+        run: |
+          set -euo pipefail
+          # tauri-action uploads latest.json straight to the release instead of
+          # leaving it in the build artifacts. Capture it before the delete below
+          # and re-attach it afterwards, otherwise the Tauri updater endpoint
+          # 404s and auto-update silently stops working for Windows users.
+          MANIFEST_URL=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ github.ref_name }}" \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print(next((a['browser_download_url'] for a in d.get('assets',[]) if a['name']=='latest.json'),''))" || true)
+          if [ -n "$MANIFEST_URL" ]; then
+            curl -sL -o artifacts/latest.json "$MANIFEST_URL"
+            if [ -s artifacts/latest.json ] && grep -q '"platforms"' artifacts/latest.json; then
+              echo "Captured latest.json ($(wc -c < artifacts/latest.json) bytes)"
+            else
+              rm -f artifacts/latest.json
+              echo "Downloaded latest.json was not a valid updater manifest"
+            fi
+          else
+            echo "No latest.json on the existing release"
+          fi
+          if [ -f artifacts/latest.json ]; then
+            echo "Updater manifest will be re-attached to the new release"
+          else
+            echo "WARNING: release will be published without latest.json; Windows auto-update will not detect it"
+          fi
+
       - name: Delete existing release for tag (start fresh)
         run: |
           set -euo pipefail
