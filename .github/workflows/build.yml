@@ -183,38 +183,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/**/*
-          name: 6 new skinart templates
+          name: Fixed NameMC fetching
           body: |
-            ## 6 new skinart templates
+            ## Fixed NameMC fetching
 
-            Added to the bundled template library, with credit to each artist:
-            - **turtilo** by MinecraftSuchter
-            - **CaveBob** by Naamlooyz
-            - **Katze** by LimonrstX
-            - **Nostalgia** by webnccb
-            - **Eostrogen Bomb** by Yoonie
-            - **warden** by jakeayyy
-
-            Also introduces a new `LGBTQ+` tag in the template filter.
-
-            ## Fixed upload, NameMC claimer and Skinart stealer
-
-            **Skin upload + verification now actually works**
-            - Uploaded skins are verified against **NameMC**: the checker re-reads the NameMC profile and compares every pixel (RGBA) of the current active skin against the file you uploaded. "Verified" is only shown when NameMC actually reflects the tile.
-            - Fixed the wrong-hash comparison (the old code compared SHA-1 where Mojang's skin URL is really the SHA-256 of the PNG) and removed the unreliable tolerance-based session-server check.
-            - "Cancel Upload" now truly aborts the in-flight upload instead of just waiting for it to finish.
-
-            **Skinart Stealer (NameMC scraping) now works**
-            - Rewrote the NameMC scraper around a real `wreq` client that emulates a browser (UA rotation across Chrome/Safari/Edge/Firefox) and resolves canonical profile redirects, so the scraper is no longer blocked by NameMC's bot check.
-            - Downloads up to 27 skins in parallel and renders each face as a native 8x8 preview.
-            - New "All skins" mode scrapes the full skin list instead of just the active skin.
-
-            **NameMC Claimer (blockmania login)**
-            - Login no longer fails with "The server closed the connection during login on every supported protocol version".
-              - Fixed the 1.19.1/1.19.2 attempt: protocol 760 was being sent over the wire as 761, which the blockmania proxy rejects.
-              - Fixed silent disconnects from rapid back-to-back login attempts (BungeeCord-style connect throttling) by pausing between protocol attempts.
-            - Uses your stored Microsoft account token for the session join, so the claim completes instead of stopping after encryption.
-
-            **UI / packaging**
-            - Default window is 1100px wide.
-            - Added the Tauri updater plugin — new versions install themselves in the background and the app reopens, no more uninstall/reinstall.
+            Fixed the bug where NameMC fetching failed. Profile reads now use a hidden browser, so NameMC's check no longer blocks the fetch.

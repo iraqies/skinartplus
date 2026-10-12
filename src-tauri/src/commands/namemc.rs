@@ -4,279 +4,155 @@ use regex::Regex;
 use serde::Serialize;
 use serde_json::Value;
 use std::fs;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use tauri::State;
 use tauri::{AppHandle, Listener, Manager, WebviewUrl, WebviewWindowBuilder};
 
-fn curl_path() -> &'static str {
-    if cfg!(windows) && std::path::Path::new("C:\\Windows\\System32\\curl.exe").exists() {
-        "C:\\Windows\\System32\\curl.exe"
-    } else {
-        "curl"
+const NAMEMC_SCRAPE_EVENT: &str = "namemc-scrape-result";
+
+const SCRAPE_SCRIPT: &str = r#"
+(function () {
+    if (!window.__TAURI__ || !window.__TAURI__.event) return;
+    var sent = false;
+    var clearedAt = 0;
+    function tick() {
+        if (sent) return;
+        var html = document.documentElement ? document.documentElement.outerHTML : '';
+        var title = document.title || '';
+        var token = (location.hash || '').replace(/^#/, '');
+        var onNameMc = location.hostname === 'namemc.com'
+            && (location.pathname.indexOf('/profile/') === 0 || location.pathname.indexOf('/search') === 0);
+        if (!html || !onNameMc || token.indexOf('scrape=') === -1) return;
+        if (title.indexOf('Just a moment') !== -1 || html.indexOf('Just a moment') !== -1) return;
+        var hasSkins = html.indexOf('data-id="') !== -1;
+        if (!hasSkins) {
+            if (!clearedAt) clearedAt = Date.now();
+            if (Date.now() - clearedAt < 3000) return;
+        }
+        sent = true;
+        window.__TAURI__.event.emit('namemc-scrape-result', {
+            token: token,
+            html: html,
+            url: location.href
+        });
     }
+    setInterval(tick, 400);
+})();
+"#;
+
+fn scrape_gate() -> &'static tokio::sync::Mutex<()> {
+    static GATE: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+    GATE.get_or_init(|| tokio::sync::Mutex::new(()))
 }
 
-const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-
-/// TLS fingerprints to emulate when talking to NameMC. NameMC is behind
-/// Cloudflare, which blocks plain HTTP clients (the dreaded 403). `wreq`
-/// impersonates real browser TLS/HTTP fingerprints, so we try several
-/// profiles until one is not challenged.
-const EMULATION_TARGETS: &[wreq_util::Profile] = &[
-    wreq_util::Profile::Chrome149,
-    wreq_util::Profile::Chrome140,
-    wreq_util::Profile::Safari26,
-    wreq_util::Profile::Edge148,
-    wreq_util::Profile::Firefox149,
-    wreq_util::Profile::Chrome120,
-    wreq_util::Profile::Safari17_0,
-];
-
-/// True when the response is a Cloudflare interstitial rather than the profile.
-///
-/// NOTE: `challenge-platform` is deliberately NOT checked here — every
-/// Cloudflare-hosted page loads a beacon script from `challenge-platform/...`,
-/// so that string appears on perfectly good pages too.
-fn is_challenge(html: &str) -> bool {
-    html.contains("Just a moment")
-        || html.contains("cf-chl-")
-        || html.contains("__cf_chl")
-        || html.contains("Verify you are human")
-        || html.contains("Checking your browser")
+fn next_scrape_token() -> u64 {
+    static GEN: AtomicU64 = AtomicU64::new(1);
+    GEN.fetch_add(1, Ordering::Relaxed)
 }
 
-/// Fetch the NameMC profile page for an IGN.
+struct ScrapedPage {
+    html: String,
+    url: String,
+}
+
+/// Open `https://namemc.com/profile/<name>` in the app WebView and return that page.
 ///
-/// NameMC is behind Cloudflare and sometimes blocks plain HTTP clients. The
-/// Windows system curl.exe (built on SChannel) usually passes Cloudflare's
-/// checks, so we try it first (with its console window suppressed). When curl
-/// is unavailable (e.g. Linux builds / the Flatpak sandbox) or gets challenged,
-/// we fall back to reqwest with full browser headers. As a last resort we load
-/// the profile in a hidden WebView2 window, which runs a real browser engine and
-/// passes Cloudflare's JS challenges; the skin hashes are collected from the
-/// rendered DOM and reassembled into an HTML fragment for `extract_hashes`.
-/// Fetch the NameMC skin list page for an IGN and return an HTML fragment
-/// carrying the skin hashes, so downstream callers can keep using
-/// `extract_hashes` regardless of the data source.
-///
-/// Order of attempts (each one covers a different failure mode):
-///   1. `wreq` with TLS fingerprint emulation — passes Cloudflare on NameMC.
-///   2. Dripfy.io's plain JSON API (mirrors NameMC, no challenge).
-///   3. Windows system curl (SChannel).
-///   4. reqwest with full browser headers.
-///   5. A hidden WebView2 window rendering the real page (last resort).
+/// Cloudflare blocks plain requests to this URL. The window stays hidden, so
+/// the check can finish and NameMC can redirect to the canonical profile.
+/// No other site is requested for the page itself.
 async fn fetch_profile_html(app: &AppHandle, ign: &str) -> Result<String, String> {
-    // 1. wreq with browser TLS emulation (the reliable path).
-    match wreq_namemc_skins(ign).await {
-        Ok(html) => {
-            crate::dbg_log!("fetch_profile_html: got NameMC skins page via wreq");
-            return Ok(html);
-        }
-        Err(e) => crate::dbg_log!("fetch_profile_html: wreq failed ({e}), trying Dripfy"),
-    }
-
-    // 2. Dripfy.io mirrors NameMC's skin data behind a plain JSON API that
-    //    Cloudflare does not challenge.
-    match fetch_dripfy_hashes(ign).await {
-        Ok(hashes) if !hashes.is_empty() => {
-            crate::dbg_log!("fetch_profile_html: got {} hashes from Dripfy", hashes.len());
-            return Ok(hashes_html(&hashes));
-        }
-        Ok(_) => crate::dbg_log!("fetch_profile_html: Dripfy returned no skins"),
-        Err(e) => crate::dbg_log!("fetch_profile_html: Dripfy failed ({e})"),
-    }
-
-    let url = format!("https://namemc.com/profile/{}", urlencoding::encode(ign));
-
-    // 3. Try curl with browser-like headers.
-    match curl_fetch(&url).await {
-        Ok(html) if !html.trim().is_empty() => {
-            if !is_challenge(&html) {
-                return Ok(html);
-            }
-            crate::dbg_log!("fetch_profile_html: curl got a Cloudflare challenge, trying reqwest");
-        }
-        Err(e) if e.contains("Failed to launch curl") => {
-            crate::dbg_log!("fetch_profile_html: curl unavailable ({e}), using reqwest");
-        }
-        Err(e) => {
-            crate::dbg_log!("fetch_profile_html: curl error ({e}), trying reqwest");
-        }
-        _ => {}
-    }
-
-    // 4. Fall back to reqwest with full browser headers and one retry.
-    match reqwest_fetch(&url).await {
-        Ok(html) if !html.trim().is_empty() => {
-            if !is_challenge(&html) {
-                return Ok(html);
-            }
-            crate::dbg_log!("fetch_profile_html: reqwest challenged, trying WebView2");
-        }
-        Ok(_) => crate::dbg_log!("fetch_profile_html: empty response, trying WebView2"),
-        Err(e) => crate::dbg_log!("fetch_profile_html: reqwest error ({e}), trying WebView2"),
-    }
-
-    // 5. Last resort: render the profile in a hidden WebView2 window.
-    let hashes = scrape_hashes_webview(app, ign).await?;
-    if hashes.is_empty() {
-        return Err("No skins found on NameMC profile".into());
-    }
-    Ok(hashes_html(&hashes))
-}
-
-/// Build a minimal HTML fragment carrying the skin hashes, so downstream
-/// callers can keep using `extract_hashes` regardless of the data source.
-fn hashes_html(hashes: &[String]) -> String {
-    hashes
-        .iter()
-        .map(|h| format!("\n<div data-id=\"{}\"></div>", h))
-        .collect::<String>()
-}
-
-/// Pull skin hashes from Dripfy.io's public search API, which mirrors
-/// NameMC's skin history. The active skin hash comes first.
-async fn fetch_dripfy_hashes(ign: &str) -> Result<Vec<String>, String> {
-    let client = http_client();
-    let url = format!("https://dripfy.io/api/search?q={}", urlencoding::encode(ign));
-    let resp = client
-        .get(&url)
-        .header("User-Agent", BROWSER_UA)
-        .header("Accept", "application/json")
-        .send()
-        .await
-        .map_err(|e| format!("Dripfy request failed: {}", e))?;
-    if !resp.status().is_success() {
-        return Err(format!("Dripfy API returned HTTP {}", resp.status().as_u16()));
-    }
-    let json: Value = resp.json().await.map_err(|e| format!("Dripfy bad response: {e}"))?;
-    if json.get("ok").and_then(|v| v.as_bool()) != Some(true) {
-        return Err("Dripfy: player not found".into());
-    }
-
-    let mut hashes = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    let mut push = |h: String| {
-        if seen.insert(h.clone()) {
-            hashes.push(h);
-        }
-    };
-
-    if let Some(raw) = json.get("skin").and_then(|s| s.get("raw")).and_then(|v| v.as_str()) {
-        if let Some(h) = hash_from_skins_url(raw) {
-            push(h);
-        }
-    }
-    if let Some(arr) = json.get("skins").and_then(|v| v.as_array()) {
-        for s in arr {
-            if let Some(id) = s.get("skin_id").and_then(|v| v.as_str()) {
-                push(id.to_string());
-            }
-            for key in ["raw", "body", "face"] {
-                if let Some(u) = s.get(key).and_then(|v| v.as_str()) {
-                    if let Some(h) = hash_from_skins_url(u) {
-                        push(h);
-                    }
-                }
-            }
-        }
-    }
-    Ok(hashes)
-}
-
-/// Extract the 16-hex skin hash from a Dripfy/NameMC texture URL
-/// (`/i/{hash}.png` in the path or `id={hash}` in the query).
-fn hash_from_skins_url(url: &str) -> Option<String> {
-    let re = Regex::new(r"(?i)(?:[?&]id=|/i/)([a-f0-9]{16})").unwrap();
-    re.captures(url).map(|c| c[1].to_ascii_lowercase())
-}
-
-/// Build a wreq client whose TLS/HTTP fingerprints pass Cloudflare, probing
-/// `url` with each emulation profile until one returns a non-challenge 200.
-/// Mirrors the working reference scraper.
-async fn build_wreq_client(url: &str) -> Result<wreq::Client, String> {
-    let mut last_err = None;
-    for target in EMULATION_TARGETS {
-        let client = match wreq::Client::builder()
-            .emulation(*target)
-            .redirect(wreq::redirect::Policy::limited(10))
-            .build()
-        {
-            Ok(c) => c,
-            Err(e) => {
-                last_err = Some(format!("client build failed: {e}"));
-                continue;
-            }
-        };
-        match client.get(url).send().await {
-            Ok(resp) => {
-                let status = resp.status();
-                let body = resp.text().await.unwrap_or_default();
-                if status.as_u16() == 200 && !is_challenge(&body) {
-                    return Ok(client);
-                }
-                last_err = Some(format!("blocked (HTTP {status})"));
-            }
-            Err(e) => last_err = Some(e.to_string()),
-        }
-    }
-    Err(format!(
-        "NameMC blocked all emulation profiles; last error: {}",
-        last_err.unwrap_or_else(|| "unknown".into())
-    ))
-}
-
-/// Follow the `/profile/{name}` redirect to the canonical profile name
-/// (e.g. `Iraqies` -> `Iraqies.1`). Non-canonical names 404 on the skins page,
-/// so this must run before scraping skins.
-async fn resolve_canonical_name(client: &wreq::Client, name: &str) -> Result<String, String> {
-    let url = format!("https://namemc.com/profile/{}", urlencoding::encode(name));
-    let resp = client
-        .get(&url)
-        .redirect(wreq::redirect::Policy::none())
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    let status = resp.status().as_u16();
-    if status == 404 {
-        return Err(format!("profile not found: {name}"));
-    }
-    if (301..=399).contains(&status) {
-        if let Some(loc) = resp.headers().get("location") {
-            let loc = loc.to_str().unwrap_or("").to_string();
-            if let Some(idx) = loc.find("/profile/") {
-                let canonical = loc[idx + "/profile/".len()..].trim_end_matches('/').to_string();
-                if !canonical.is_empty() {
-                    return Ok(canonical);
-                }
-            }
-        }
-    }
-    Ok(name.to_string())
-}
-
-/// Scrape the NameMC skins page for `ign` using a wreq client with browser TLS
-/// emulation: build a passing client, resolve the canonical name, then fetch
-/// `/minecraft-skins/profile/{canonical}` and extract the `/skin/{hash}` links.
-async fn wreq_namemc_skins(ign: &str) -> Result<String, String> {
-    let probe_url = format!("https://namemc.com/profile/{}", urlencoding::encode(ign));
-    let client = build_wreq_client(&probe_url).await?;
-    let canonical = resolve_canonical_name(&client, ign).await?;
-    let skins_url = format!(
-        "https://namemc.com/minecraft-skins/profile/{}",
-        urlencoding::encode(&canonical)
+    let _gate = scrape_gate().lock().await;
+    let generation = next_scrape_token();
+    let token = format!("scrape={generation}");
+    let profile_url = format!(
+        "https://namemc.com/profile/{}#{}",
+        urlencoding::encode(ign),
+        token
     );
-    let resp = client
-        .get(&skins_url)
-        .send()
-        .await
-        .map_err(|e| format!("skins fetch failed: {e}"))?;
-    let body = resp.text().await.map_err(|e| e.to_string())?;
-    if is_challenge(&body) {
-        return Err("skins page is a Cloudflare challenge".into());
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ScrapedPage>();
+    let expected = token.clone();
+    let listener_id = app.listen(NAMEMC_SCRAPE_EVENT, move |event| {
+        let Ok(value) = serde_json::from_str::<Value>(event.payload()) else {
+            return;
+        };
+        if value.get("token").and_then(|item| item.as_str()) != Some(expected.as_str()) {
+            return;
+        }
+        let Some(html) = value.get("html").and_then(|item| item.as_str()) else {
+            return;
+        };
+        if html.is_empty() {
+            return;
+        }
+        let url = value
+            .get("url")
+            .and_then(|item| item.as_str())
+            .unwrap_or("")
+            .to_string();
+        let _ = tx.send(ScrapedPage {
+            html: html.to_string(),
+            url,
+        });
+    });
+
+    if let Err(err) = open_scrape_window(app, &profile_url) {
+        app.unlisten(listener_id);
+        return Err(err);
     }
-    Ok(body)
+
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(60);
+    let mut result = Err(
+        "Timed out waiting for NameMC in the background browser. The page may be stuck on a Cloudflare check — try again in a few seconds."
+            .into(),
+    );
+    while tokio::time::Instant::now() < deadline {
+        let left = deadline.saturating_duration_since(tokio::time::Instant::now());
+        match tokio::time::timeout(left, rx.recv()).await {
+            Ok(Some(page)) => {
+                if !page.url.contains("namemc.com/profile/")
+                    && !page.url.contains("namemc.com/search")
+                    && !page.html.contains("Search | NameMC")
+                {
+                    continue;
+                }
+                result = Ok(page.html);
+                break;
+            }
+            Ok(None) => {
+                result = Err("NameMC scraper was interrupted".into());
+                break;
+            }
+            Err(_) => break,
+        }
+    }
+
+    app.unlisten(listener_id);
+    result
+}
+
+fn open_scrape_window(app: &AppHandle, url: &str) -> Result<(), String> {
+    let url = tauri::Url::parse(url).map_err(|e| format!("Invalid URL: {e}"))?;
+    if let Some(window) = app.get_webview_window("namemc-scrape") {
+        let _ = window.hide();
+        window
+            .navigate(url)
+            .map_err(|e| format!("Failed to open the NameMC profile: {e}"))?;
+        return Ok(());
+    }
+
+    WebviewWindowBuilder::new(app, "namemc-scrape", WebviewUrl::External(url))
+        .title("NameMC")
+        .inner_size(1100.0, 820.0)
+        .visible(false)
+        .skip_taskbar(true)
+        .focused(false)
+        .focusable(false)
+        .initialization_script(SCRAPE_SCRIPT)
+        .build()
+        .map_err(|e| format!("Failed to open NameMC in the background browser: {e}"))?;
+    Ok(())
 }
 
 /// Download rendered 2D face previews for every skin on the profile, exactly
@@ -331,177 +207,6 @@ async fn download_skins_parallel(hashes: &[String]) -> Vec<Vec<u8>> {
         out.extend(ordered.into_iter().flatten());
     }
     out
-}
-
-const NAMEMC_SCRAPE_EVENT: &str = "namemc-scrape-result";
-
-/// Render `https://namemc.com/profile/{ign}` in a hidden WebView2 window and
-/// collect the skin hashes from the rendered DOM. The real browser engine
-/// passes Cloudflare's checks that block plain HTTP clients.
-async fn scrape_hashes_webview(app: &AppHandle, ign: &str) -> Result<Vec<String>, String> {
-    let url = format!("https://namemc.com/profile/{}", urlencoding::encode(ign));
-    let parsed_url = tauri::Url::parse(&url).map_err(|e| format!("Invalid URL: {e}"))?;
-
-    let (tx, rx) = tokio::sync::oneshot::channel::<Vec<String>>();
-    let tx = Arc::new(Mutex::new(Some(tx)));
-    let tx_listener = tx.clone();
-
-    let listener_id = app.listen(NAMEMC_SCRAPE_EVENT, move |event| {
-        let payload = event.payload();
-        if let Ok(v) = serde_json::from_str::<Value>(payload) {
-            let hashes: Vec<String> = v
-                .get("hashes")
-                .and_then(|h| h.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|x| x.as_str().map(str::to_string))
-                        .collect()
-                })
-                .unwrap_or_default();
-            if !hashes.is_empty() {
-                if let Some(sender) = tx_listener.lock().unwrap().take() {
-                    let _ = sender.send(hashes);
-                }
-            }
-        }
-    });
-
-    let script = r#"
-        (function () {
-            if (!window.__TAURI__ || !window.__TAURI__.event) return;
-            var sent = false;
-            var seen = [];
-            function collect() {
-                if (sent) return;
-                var els = document.querySelectorAll('[data-id]');
-                var hashes = [];
-                for (var i = 0; i < els.length; i++) {
-                    var id = (els[i].getAttribute('data-id') || '').trim();
-                    if (/^[a-f0-9]{16}$/.test(id) && seen.indexOf(id) === -1) {
-                        seen.push(id);
-                        hashes.push(id);
-                    }
-                }
-                if (hashes.length > 0) {
-                    sent = true;
-                    window.__TAURI__.event.emit('namemc-scrape-result', { hashes: hashes });
-                }
-            }
-            setInterval(collect, 400);
-        })();
-    "#;
-
-    if let Some(existing) = app.get_webview_window("namemc-scrape") {
-        let _ = existing.close();
-    }
-    let window = WebviewWindowBuilder::new(app, "namemc-scrape", WebviewUrl::External(parsed_url))
-        .title("")
-        .inner_size(1100.0, 820.0)
-        .visible(false)
-        .skip_taskbar(true)
-        .focusable(false)
-        .initialization_script(script)
-        .build()
-        .map_err(|e| format!("Failed to open NameMC in the background browser: {e}"))?;
-
-    let result = match tokio::time::timeout(std::time::Duration::from_secs(60), rx).await {
-        Ok(Ok(hashes)) => Ok(hashes),
-        Ok(Err(_)) => Err("NameMC scraper was interrupted".into()),
-        Err(_) => Err(
-            "Timed out waiting for NameMC in the background browser. The page may be stuck on a Cloudflare check — try again in a few seconds."
-                .into(),
-        ),
-    };
-
-    let _ = window.close();
-    app.unlisten(listener_id);
-    result
-}
-
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-
-/// Spawn curl with its console window suppressed so no cmd flashes on screen.
-async fn curl_fetch(url: &str) -> Result<String, String> {
-    let mut cmd = tokio::process::Command::new(curl_path());
-    cmd.arg("-sSL")
-        .arg("--compressed")
-        .arg("--max-time")
-        .arg("25")
-        .arg("--retry")
-        .arg("3")
-        .arg("--retry-all-errors")
-        .arg("--retry-delay")
-        .arg("2")
-        .arg("-A")
-        .arg(BROWSER_UA)
-        .arg("-H")
-        .arg("Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-        .arg("-H")
-        .arg("Accept-Language: en-US,en;q=0.9")
-        .arg(&url);
-    #[cfg(windows)]
-    cmd.creation_flags(0x08000000);
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("Failed to launch curl: {}", e))?;
-    if !output.status.success() {
-        return Err(format!(
-            "NameMC fetch failed (curl exit {}): {}",
-            output.status.code().unwrap_or(-1),
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-}
-
-async fn reqwest_fetch(url: &str) -> Result<String, String> {
-    let client = http_client();
-    let mut last_err: Option<String> = None;
-    for attempt in 1..=3 {
-        let resp = client
-            .get(url)
-            .header("User-Agent", BROWSER_UA)
-            .header(
-                "Accept",
-                "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-            )
-            .header("Accept-Language", "en-US,en;q=0.9")
-            .header("sec-ch-ua", "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"")
-            .header("sec-ch-ua-mobile", "?0")
-            .header("sec-ch-ua-platform", "\"Windows\"")
-            .header("Sec-Fetch-Dest", "document")
-            .header("Sec-Fetch-Mode", "navigate")
-            .header("Sec-Fetch-Site", "none")
-            .header("Upgrade-Insecure-Requests", "1")
-            .header("Referer", "https://namemc.com/")
-            .send()
-            .await;
-        match resp {
-            Ok(r) => {
-                if r.status().is_success() {
-                    return r.text().await.map_err(|e| e.to_string());
-                }
-                last_err = Some(format!("HTTP {}", r.status().as_u16()));
-            }
-            Err(e) => last_err = Some(e.to_string()),
-        }
-        let backoff = match attempt {
-            1 => 1500,
-            2 => 4000,
-            _ => 0,
-        };
-        if backoff > 0 {
-            tokio::time::sleep(std::time::Duration::from_millis(backoff)).await;
-        }
-    }
-    let msg = last_err.unwrap_or_else(|| "unknown error".into());
-    if msg == "HTTP 403" {
-        Err("NameMC is temporarily blocking this request (HTTP 403). Too many rapid requests can trigger a short block — wait a minute and try again.".into())
-    } else {
-        Err(format!("NameMC fetch failed: {}", msg))
-    }
 }
 
 fn extract_hashes(html: &str) -> Vec<String> {
@@ -582,19 +287,13 @@ pub struct ScrapeAllResult {
 #[tauri::command]
 pub async fn scrape_namemc_all_skins(app: AppHandle, ign: String) -> ScrapeAllResult {
     let t0 = std::time::Instant::now();
-    let html = match wreq_namemc_skins(&ign).await {
+    let html = match fetch_profile_html(&app, &ign).await {
         Ok(h) => h,
         Err(e) => {
-            crate::dbg_log!("scrape_namemc_all_skins: wreq page failed ({e}), falling back");
-            match fetch_profile_html(&app, &ign).await {
-                Ok(h) => h,
-                Err(e2) => {
-                    return ScrapeAllResult {
-                        success: false,
-                        error: Some(e2),
-                        ..Default::default()
-                    }
-                }
+            return ScrapeAllResult {
+                success: false,
+                error: Some(e),
+                ..Default::default()
             }
         }
     };

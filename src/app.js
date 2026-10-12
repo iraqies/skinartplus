@@ -979,13 +979,11 @@ async function waitForNextSkin(num, skinPath) {
   return new Promise((resolve) => {
     let resolved = false;
     let attempts = 0;
-    let timer = null;
     let uploadedBase64 = null;
 
     function finish() {
       if (resolved) return;
       resolved = true;
-      if (timer) clearInterval(timer);
       dom.btnSkipWait.style.display = 'none';
       resolve();
     }
@@ -1000,7 +998,7 @@ async function waitForNextSkin(num, skinPath) {
       if (state.cancelUpload) { finish(); return; }
       if (!uploadedBase64) { finish(); return; }
 
-      timer = setInterval(async () => {
+      while (!resolved && attempts < maxAttempts) {
         if (state.cancelUpload) { finish(); return; }
         attempts++;
         dom.pollStatus.className = 'poll-status';
@@ -1011,23 +1009,23 @@ async function waitForNextSkin(num, skinPath) {
           if (resolved) return;
           if (!(nmResult.success && nmResult.skinDataBase64)) {
             dom.pollText.textContent = 'NameMC: ' + (nmResult.error || 'no skin data');
-            return;
-          }
-          const skinBase64 = nmResult.skinDataBase64;
-          const diff = await compareSkinsExact(skinBase64, uploadedBase64);
-          if (resolved) return;
-          if (diff === 0) {
-            dom.confirmTitle.textContent = 'Skin ' + num + ' verified!';
-            dom.pollStatus.className = 'poll-status done';
-            dom.pollText.textContent = 'Verified on NameMC!';
-            dom.confirmHint.style.display = 'none';
-            finish();
-            return;
-          } else if (diff > 0) {
-            dom.pollText.textContent = 'Checking... (' + attempts + '/' + maxAttempts + ') — ' + diff + ' px differ';
+          } else {
+            const skinBase64 = nmResult.skinDataBase64;
+            const diff = await compareSkinsExact(skinBase64, uploadedBase64);
+            if (resolved) return;
+            if (diff === 0) {
+              dom.confirmTitle.textContent = 'Skin ' + num + ' verified!';
+              dom.pollStatus.className = 'poll-status done';
+              dom.pollText.textContent = 'Verified on NameMC!';
+              dom.confirmHint.style.display = 'none';
+              finish();
+              return;
+            } else if (diff > 0) {
+              dom.pollText.textContent = 'Checking... (' + attempts + '/' + maxAttempts + ') — ' + diff + ' px differ';
+            }
           }
         } catch (e) {
-          dom.pollText.textContent = 'Check failed: ' + e.message;
+          if (!resolved) dom.pollText.textContent = 'Check failed: ' + e.message;
         }
 
         if (attempts >= maxAttempts) {
@@ -1035,8 +1033,10 @@ async function waitForNextSkin(num, skinPath) {
           dom.pollText.textContent = 'Timed out — moving to next skin';
           dom.confirmHint.style.display = 'none';
           finish();
+          return;
         }
-      }, interval);
+        await new Promise((r) => setTimeout(r, interval));
+      }
     }, 3000);
   });
 }
