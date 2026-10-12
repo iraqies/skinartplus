@@ -226,8 +226,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/**/*
-          name: Fixed NameMC fetching
+          name: Mac support
           body: |
-            ## Fixed NameMC fetching
+            ## Mac support
 
-            Fixed the bug where NameMC fetching failed. Profile reads now use a hidden browser, so NameMC's check no longer blocks the fetch.
+            Added a macOS disk image. It runs on Apple silicon and Intel Macs. The app is not signed with an Apple developer certificate, so the first launch is a right-click and then Open.
