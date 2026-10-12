@@ -37,6 +37,12 @@ Get the latest build from [Releases](https://github.com/iraqies/skinartplus/rele
 
 Run the installer. It installs for your user account, needs no administrator rights, and requires no extra dependencies.
 
+### macOS
+
+Download the `.dmg` from [Releases](https://github.com/iraqies/skinartplus/releases/latest). It runs on Apple silicon and Intel Macs. Open the disk image and drag Skinart+ into Applications.
+
+The build is not signed with an Apple developer certificate. The first time you open it, right-click the app and choose Open.
+
 ### Linux
 
 Choose a package for your distribution.

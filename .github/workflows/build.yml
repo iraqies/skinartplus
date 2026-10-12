@@ -16,6 +16,8 @@ jobs:
             args: "--bundles deb,rpm,appimage"
           - platform: "windows-latest"
             args: "--bundles nsis"
+          - platform: "macos-latest"
+            args: "--target universal-apple-darwin --bundles dmg"
     runs-on: ${{ matrix.platform }}
     permissions:
       contents: write
@@ -39,6 +41,10 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Add macOS Rust targets
+        if: runner.os == 'macOS'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -84,6 +90,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
+          if-no-files-found: warn
           name: ${{ matrix.platform }}-bundles
           path: |
             src-tauri/target/release/bundle/deb/*.deb
@@ -92,6 +99,9 @@ jobs:
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/nsis/*.sig
             src-tauri/target/release/latest.json
+            src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
 
   flatpak:
     runs-on: ubuntu-22.04
@@ -165,17 +175,30 @@ jobs:
           ASSET=$(basename "$EXE")
           URL="https://github.com/${{ github.repository }}/releases/download/${VERSION}/${ASSET}"
           python3 - "$VERSION" "${EXE}.sig" "$URL" > artifacts/latest.json <<'PY'
-          import datetime, json, sys
+          import datetime, json, os, sys
           version, sig_path, url = sys.argv[1:4]
           with open(sig_path, encoding="utf-8") as fh:
               signature = fh.read().strip()
+          platforms = {
+              "windows-x86_64": {"signature": signature, "url": url}
+          }
+          mac_sig = ""
+          mac_name = ""
+          for dirpath, _, files in os.walk("artifacts"):
+              for name in files:
+                  if name.endswith(".app.tar.gz.sig"):
+                      mac_sig = open(os.path.join(dirpath, name), encoding="utf-8").read().strip()
+                      mac_name = name[:-4]
+          if mac_sig and mac_name:
+              mac_url = url.rsplit("/", 1)[0] + "/" + mac_name
+              mac = {"signature": mac_sig, "url": mac_url}
+              platforms["darwin-aarch64"] = mac
+              platforms["darwin-x86_64"] = mac
           manifest = {
               "version": version,
               "notes": "Skinart+ " + version,
               "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-              "platforms": {
-                  "windows-x86_64": {"signature": signature, "url": url}
-              },
+              "platforms": platforms,
           }
           json.dump(manifest, sys.stdout, indent=2)
           print()
