@@ -48,6 +48,26 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
+      - name: Download AppImage tools
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.cache/tauri"
+          download() {
+            url="$1"
+            dest="$2"
+            echo "Fetching $url"
+            curl --fail --location --retry 12 --retry-all-errors --retry-delay 5 \
+              --output "$dest" "$url"
+            chmod +x "$dest"
+          }
+          download \
+            "https://github.com/tauri-apps/binary-releases/releases/download/apprun-old/AppRun-x86_64" \
+            "$HOME/.cache/tauri/AppRun-x86_64"
+          download \
+            "https://github.com/tauri-apps/binary-releases/releases/download/linuxdeploy/linuxdeploy-x86_64.AppImage" \
+            "$HOME/.cache/tauri/linuxdeploy-x86_64.AppImage"
+
       - name: Build
         uses: tauri-apps/tauri-action@v0
         env:
